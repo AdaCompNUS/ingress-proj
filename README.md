@@ -24,15 +24,14 @@ And works in the [acknowledgements](#acknowledgements).
 ## Requirements
 
 ### Software
-- [Ubuntu 14.04](http://releases.ubuntu.com/14.04/)
+- [Ubuntu 16.04](http://releases.ubuntu.com/16.04/)
 - [Docker 18.03.1+](https://docs.docker.com/install/linux/docker-ce/ubuntu/#install-docker-ce)
 - [NVIDIA Docker](https://github.com/NVIDIA/nvidia-docker)
-- [ROS Indigo](http://wiki.ros.org/indigo/Installation/Ubuntu) 
+- [ROS Kinetic](http://wiki.ros.org/kinetic/Installation/Ubuntu) 
 - [OpenCV 2](https://docs.opencv.org/3.4.1/d2/de6/tutorial_py_setup_in_ubuntu.html) (Optional)
 
 ### Hardware
 - Tested on NVIDIA GTX 1080 (needs about 2.5 GB RAM)
-	
 
 ## Installation
 
@@ -42,11 +41,10 @@ The docker image contains: [ROS (Indigo)](http://wiki.ros.org/indigo), [Torch](h
 
 ### Nvidia Docker 
 
-Follow the instructions to [install NVIDIA docker](https://github.com/NVIDIA/nvidia-docker). You should be able to run this, if everything is installed properly:
+Follow the instructions to [install NVIDIA docker](https://github.com/NVIDIA/nvidia-docker). You should be able to run this inside docker, if everything is installed properly:
 ```bash
-$ docker run --runtime=nvidia --rm nvidia/cuda nvidia-smi
+$ nvidia-smi
 ```
-
 
 ## Quickstart
 
