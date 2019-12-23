@@ -28,8 +28,6 @@ def dbg_print(text):
     if DEBUG:
         print(text)
 
-
-
 class Ingress():
     def __init__(self):
         # wait for grounding load server
@@ -50,7 +48,7 @@ class Ingress():
         self._query_client.wait_for_server()
 
         # publisher for Ingress grounding results
-        self._grounding_result_pub = rospy.Publisher('dense_refexp_result', Image, queue_size=1, latch=True)
+        self._grounding_result_pub = rospy.Publisher('ingress/dense_refexp_result', Image, queue_size=1, latch=True)
 
         # demo ready!
         rospy.loginfo("Ingress ready!")
