@@ -48,7 +48,7 @@ class Ingress():
         self._query_client.wait_for_server()
 
         # publisher for Ingress grounding results
-        self._grounding_result_pub = rospy.Publisher('ingress/dense_refexp_result', Image, queue_size=1, latch=True)
+        self._grounding_result_pub = rospy.Publisher('ingress/dense_refexp_result', Image, queue_size=10, latch=True)
 
         # demo ready!
         rospy.loginfo("Ingress ready!")
@@ -244,6 +244,9 @@ class Ingress():
             elif count < len(context_boxes_idxs):
                 cv2.rectangle(draw_img, (x1, y1), (x2, y2), (0,0,255), 11)
 
+        # cv2.imshow('image', draw_img)
+        # cv2.waitKey(50)
+        # cv2.destroyAllWindows()
         result_img = CvBridge().cv2_to_imgmsg(draw_img)
         self._grounding_result_pub.publish(result_img)
         rospy.loginfo("grounding result published")
@@ -263,6 +266,13 @@ class Ingress():
 
         self._img_msg = image
         boxes, losses = self._ground_load(image)
+        if expr == '':
+            rospy.loginfo("Ingress: empty query string received, returning ungrounded result")
+            top_idx = 0
+            context_idxs = [i for i in range(0, len(boxes)) if losses[i] > 0]
+            pomdp_init_data = ([self._ungrounded_captions[i] for i in context_idxs], [losses[i] for i in context_idxs], [], None)
+            return boxes, top_idx, context_idxs, pomdp_init_data
+
         top_idx, context_idxs, pomdp_init_data = self._ground_query(expr, boxes)
         # context_idxs.append(top_idx)
 
