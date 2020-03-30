@@ -35,7 +35,7 @@ And works in the [acknowledgements](#acknowledgements).
 
 ## Installation
 
-The docker image contains: [ROS (Indigo)](http://wiki.ros.org/indigo), [Torch](http://torch.ch/), [Caffe](http://caffe.berkeleyvision.org/), and Ingress (source code). To run and test Ingress inside the docker image, you don't need to install any dependencies other than nvidia-docker itself.
+The docker image contains: [ROS (kinetic)](http://wiki.ros.org/kinetic), [Torch](http://torch.ch/), [Caffe](http://caffe.berkeleyvision.org/), and Ingress (source code). To run and test Ingress inside the docker image, you don't need to install any dependencies other than nvidia-docker itself.
 
 <!--However, for a server-client setup, you need to clone this repo on both the server & client, and compile the interface on the client side (see below). The client can also be the shell running the docker image.-->   
 
