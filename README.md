@@ -56,7 +56,7 @@ A quick guide to testing the whole system inside the docker image.
 
 Clone the repo OR unzip the folder:
 ```bash
-$ git clone https://github.com/MohitShridhar/ingress.git 
+$ git clone https://github.com/AdaCompNUS/ingress.git 
 ```
 
 Run the script. The first time you run this command, Docker downloads an 9.2GB image (could take a while!):
@@ -117,7 +117,6 @@ $ docker cp <container_id>:/root/ros_devel_ws/src/ingress/examples/grounding_res
 
 To shutdown the `ingress` server, use `Ctrl + c` or `Ctrl + \`.
 
-
 ## Robot Setup
 
 To integrate Ingress with real-robots, use the docker image as a grounding server. But first, you need to compile the ROS actionlib interface on your robot or client-pc in order to communicate with the Ingress server (that is running inside the docker image).
@@ -127,7 +126,7 @@ To integrate Ingress with real-robots, use the docker image as a grounding serve
 On your robot/client-pc, clone the interface repo:
 ```bash
 $ cd <your_ros_workspace>/src
-$ git clone --recursive https://github.com/MohitShridhar/ingress.git
+$ git clone --recursive https://github.com/AdaCompNUS/ingress.git
 ```
 
 Install actionlib messages:
@@ -156,6 +155,17 @@ root@pc:/# ingress
 ```
 
 You should now be able to run the Quickstart example outside the docker image on all clients connected to roscore.
+
+## How to make changes:
+
+### Ros wrapper:
+You can make changes and test ROS wrapper normally
+
+### Ingress:
+The source code for ingress server is stored in src/refexp/lib. You can make change there. However, when you want to test the change, you have to copy it into docker
+```bash
+docker cp src/refexp/lib <container-id>:/root/Programs/refexp/
+```
 
 ## Options
 
