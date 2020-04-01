@@ -160,9 +160,9 @@ You should now be able to run the Quickstart example outside the docker image on
 You can make changes and test ROS wrapper normally
 
 ### Ingress:
-The source code for ingress server is stored in src/refexp/lib. You can make change there. However, when you want to test the change, you have to copy it into docker
+The source code for ingress server is stored in docker_root. You can make change there. However, when you want to test the change, you have to copy it into docker
 ```bash
-docker cp src/refexp/lib <container-id>:/root/Programs/refexp/
+docker cp docker_root/ <container-id>:/root/
 ```
 
 ## Options
