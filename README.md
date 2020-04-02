@@ -24,29 +24,27 @@ And works in the [acknowledgements](#acknowledgements).
 ## Requirements
 
 ### Software
-- [Ubuntu 14.04](http://releases.ubuntu.com/14.04/)
+- [Ubuntu 16.04](http://releases.ubuntu.com/16.04/)
 - [Docker 18.03.1+](https://docs.docker.com/install/linux/docker-ce/ubuntu/#install-docker-ce)
 - [NVIDIA Docker](https://github.com/NVIDIA/nvidia-docker)
-- [ROS Indigo](http://wiki.ros.org/indigo/Installation/Ubuntu) 
+- [ROS Kinetic](http://wiki.ros.org/kinetic/Installation/Ubuntu) 
 - [OpenCV 2](https://docs.opencv.org/3.4.1/d2/de6/tutorial_py_setup_in_ubuntu.html) (Optional)
 
 ### Hardware
 - Tested on NVIDIA GTX 1080 (needs about 2.5 GB RAM)
-	
 
 ## Installation
 
-The docker image contains: [ROS (Indigo)](http://wiki.ros.org/indigo), [Torch](http://torch.ch/), [Caffe](http://caffe.berkeleyvision.org/), and Ingress (source code). To run and test Ingress inside the docker image, you don't need to install any dependencies other than nvidia-docker itself.
+The docker image contains: [ROS (kinetic)](http://wiki.ros.org/kinetic), [Torch](http://torch.ch/), [Caffe](http://caffe.berkeleyvision.org/), and Ingress (source code). To run and test Ingress inside the docker image, you don't need to install any dependencies other than nvidia-docker itself.
 
 <!--However, for a server-client setup, you need to clone this repo on both the server & client, and compile the interface on the client side (see below). The client can also be the shell running the docker image.-->   
 
 ### Nvidia Docker 
 
-Follow the instructions to [install NVIDIA docker](https://github.com/NVIDIA/nvidia-docker). You should be able to run this, if everything is installed properly:
+Follow the instructions to [install NVIDIA docker](https://github.com/NVIDIA/nvidia-docker). You should be able to run this inside docker, if everything is installed properly:
 ```bash
-$ docker run --runtime=nvidia --rm nvidia/cuda nvidia-smi
+$ nvidia-smi
 ```
-
 
 ## Quickstart
 
@@ -162,9 +160,9 @@ You should now be able to run the Quickstart example outside the docker image on
 You can make changes and test ROS wrapper normally
 
 ### Ingress:
-The source code for ingress server is stored in src/refexp/lib. You can make change there. However, when you want to test the change, you have to copy it into docker
+The source code for ingress server is stored in docker_root. You can make change there. However, when you want to test the change, you have to copy it into docker
 ```bash
-docker cp src/refexp/lib <container-id>:/root/Programs/refexp/
+docker cp docker_root/ <container-id>:/root/
 ```
 
 ## Options
@@ -205,6 +203,23 @@ Exit and `docker commit` the changes to the image.
 ## Acknowledgements
 
 [Johnson et. al, Densecap](https://github.com/jcjohnson/densecap)  
+```
+@inproceedings{densecap,
+  title={DenseCap: Fully Convolutional Localization Networks for Dense Captioning},
+  author={Johnson, Justin and Karpathy, Andrej and Fei-Fei, Li},
+  booktitle={Proceedings of the IEEE Conference on Computer Vision and 
+             Pattern Recognition},
+  year={2016}
+}
+```
+  
 [Nagaraja et. al, Referring Expressions](https://github.com/varun-nagaraja/referring-expressions)
-
+```
+@inproceedings{nagaraja16refexp,
+  title={Modeling Context Between Objects for Referring Expression Understanding},
+  author={Varun K. Nagaraja and Vlad I. Morariu and Larry S. Davis},
+  booktitle={ECCV},
+  year={2016}
+}
+```
 

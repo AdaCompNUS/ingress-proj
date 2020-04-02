@@ -13,8 +13,8 @@ if __name__ == '__main__':
     ingress_service = ingress_srv.Ingress()
     img = cv2.imread(sys.argv[1])
     img_msg = _cv_bridge.cv2_to_imgmsg(img)
-    boxes, top_idx, context_idxs, pomdp_init_data = ingress_service.ground(img_msg, '')
-    sem_captions, self_probs, rel_captions, rel_probs = pomdp_init_data
+    boxes, top_idx, context_idxs, captions = ingress_service.ground(img_msg, '')
+    sem_captions, self_probs, rel_captions, rel_probs = captions
     rospy.loginfo("Self-Referrential Captions: " + str(sem_captions))
     rospy.loginfo("Self-Referrential Probabilities: " + str(self_probs))
 
