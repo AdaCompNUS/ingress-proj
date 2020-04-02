@@ -58,3 +58,6 @@ CATKIN_IGNORE
 
 # Eclipse files
 .settings/
+
+# vscode files
+.vscode/

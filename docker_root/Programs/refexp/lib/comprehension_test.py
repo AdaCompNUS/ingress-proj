@@ -109,10 +109,10 @@ class ComprehensionExperiment:
         # ravel boxes
         r_boxes = []
         for bbox in copy.copy(bboxes):
-            r_boxes.append(int(bbox[0]+bbox[2]/2+1))
-            r_boxes.append(int(bbox[1]+bbox[3]/2+1))
-            r_boxes.append(int(bbox[2]))
-            r_boxes.append(int(bbox[3]))
+            r_boxes.append(int(bbox[0]+bbox[2]/2+1))  # xc
+            r_boxes.append(int(bbox[1]+bbox[3]/2+1))  # yc
+            r_boxes.append(int(bbox[2]))  # w
+            r_boxes.append(int(bbox[3]))  # h
 
         # send image to dense localizer
         extract_client = actionlib.SimpleActionClient(
@@ -345,6 +345,8 @@ class MILContextComprehension(ComprehensionExperiment):
         return result
 
     def load_image_with_boxes(self, goal):
+
+        print("load_image_with_boxes start")
 
         self._prev_query_breakdowns = []
         self._query_breakdowns = []
