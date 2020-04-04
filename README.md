@@ -48,7 +48,7 @@ $ nvidia-smi
 
 ## Quickstart
 
-A quick guide to testing the whole system inside the docker image.  
+A quick guide to testing the whole system **inside the docker image.** To integrate ingress with host system, see Robot Setup section below.  
 
 ### Start Docker
 
@@ -75,7 +75,7 @@ Press `Ctrl+b` and `d` to escape the tmux shell.
 
 ### Ingress
 
-Start the INGRESS server in a tmux shell by running the `ingress` command:
+Then start the INGRESS server in a tmux shell by running the `ingress` command:
 ```bash
 root@pc:/# tmux new -s ingress
 root@pc:/# ingress
@@ -143,7 +143,11 @@ IP=<ingress_system_ip_addr>
 ...
 ```
 
-### Usage
+or go inside your docker and manually set up the ROS_MASTER_URI
+ ```
+export ROS_MASTER_URI="http://<roscore_ip_addr>:11311"
+export ROS_IP=localhost
+```
 
 Start `roscore` on your robot or client-pc. Then start `ingress` inside the docker image:
 
