@@ -18,11 +18,14 @@ from datetime import datetime
 
 import action_controller.msg
 
-'''Settings'''
+
+# Settings
+DEBUG = False
+PUBLISH_DEBUG_RESULT = False
+
+# Constants
 VALID_MIN_CLUSTER_SIZE = 500  # points
 VALID_MIN_RELEVANCY_SCORE = 0.05
-
-DEBUG = False
 
 
 def dbg_print(text):
@@ -38,6 +41,12 @@ class Ingress():
         rospy.loginfo("DemoManager: 1. Waiting for dense_refexp_load action server ...")
         self._self_captions = []
         self._load_client.wait_for_server()
+
+        # wait for ground bbox load server
+        self._load_bbox_client = actionlib.SimpleActionClient(
+            'dense_refexp_load_bboxes', action_controller.msg.DenseRefexpLoadBBoxesAction)
+        rospy.loginfo("1. Waiting for dense_refexp_load_bboxes action server ...")
+        self._load_bbox_client.wait_for_server()
 
         # wait for relevancy clustering server
         self._relevancy_client = actionlib.SimpleActionClient(
@@ -80,9 +89,9 @@ class Ingress():
 
         return boxes, losses
 
-    def _pomdp_preprocess(self, relevancy_result, query_result, context_boxes_idxs, query):
+    def _process_captions(self, relevancy_result, query_result, context_boxes_idxs, query):
         '''
-        helper function to organize the data for the POMDP disambiguation model
+        helper function to organize captions
         '''
 
         all_orig_idx = relevancy_result.all_orig_idx
@@ -185,11 +194,11 @@ class Ingress():
         context_boxes_idxs = [top_idx] + list(query_result.context_boxes_idxs)
         self._context_boxes_idxs = list(context_boxes_idxs)
 
-        # preprocess data for POMDP model
-        pomdp_init_data = self._pomdp_preprocess(
+        # preprocess captions
+        captions = self._process_captions(
             self._relevancy_result, query_result, context_boxes_idxs, query)
 
-        return top_idx, context_boxes_idxs, pomdp_init_data
+        return top_idx, context_boxes_idxs, captions
 
     def _reground_query(self, expr, boxes):
         '''
@@ -229,16 +238,19 @@ class Ingress():
         top_idx = query_result.top_box_idx
         context_boxes_idxs = [top_idx] + list(query_result.context_boxes_idxs)
 
-        # preprocess data for POMDP model
-        pomdp_init_data = self._pomdp_preprocess(
+        # preprocess captions
+        captions = self._process_captions(
             new_relevancy_result, query_result, self._context_boxes_idxs, query)
 
-        return top_idx, context_boxes_idxs, pomdp_init_data
+        return top_idx, context_boxes_idxs, captions
 
-    def _publish_grounding_result(self, boxes, context_boxes_idxs, pomdp_init_data=None):
+    def _publish_grounding_result(self, boxes, context_boxes_idxs, captions=None):
         '''
         debugging visualization of the bounding box outputs from the grounding model
         '''
+
+        if not PUBLISH_DEBUG_RESULT:
+            return
 
         # Input validity check
         if len(boxes) == 0 or len(context_boxes_idxs) == 0:
@@ -259,8 +271,8 @@ class Ingress():
                 cv2.rectangle(draw_img, (x1, y1), (x2, y2), (0, 0, 255), 2)
 
             # add captions
-            if pomdp_init_data is not None:
-                sem_captions, _, _, _ = pomdp_init_data
+            if captions is not None:
+                sem_captions, _, _, _ = captions
                 font = cv2.FONT_HERSHEY_DUPLEX
                 print("x1 {}, y1 {}".format(x1, y1))
                 if y1 - 15 > 5:
@@ -280,9 +292,14 @@ class Ingress():
     def ground(self, image, expr):
         '''
         run the full grounding pipeline
-        @param image, ros/sensor_msgs/Image, image
+        @param image, cv2 img
         @param expr, string, user input to describe the target object
-        @return. the most likely bounding boxes. 
+        @return boxes, the detected bounding boxes
+                top_idx, the index of the most likely boudning box in boxes
+                context_idx, maps from captions index tp bbox indexs. 
+                             The first value in context_idx is the index of bounding box for the first value in sem_captions.
+                             For example, sem_caption for most likely bbox is sem_caption[context_idx.index(top_idx)]
+                captions, (sem_captions, sem_probs, rel_captions, rel_probs) tuple
         '''
 
         # Input validity check
@@ -290,23 +307,78 @@ class Ingress():
             rospy.logerr("DemoMovo/ground: image is none, skip")
             return None
 
-        self._img_msg = image
-        boxes, losses = self._ground_load(image)
+        self._img_msg = CvBridge().cv2_to_imgmsg(image, "rgb8")
+        bboxes, losses = self._ground_load(image)
+
+        # if user exprssion is empty, just generate captions for image
         if expr == '':
             rospy.loginfo("Ingress: empty query string received, returning ungrounded result")
             top_idx = 0
-            context_idxs = [i for i in range(0, len(boxes)) if losses[i] > 0]
-            pomdp_init_data = ([self._ungrounded_captions[i]
-                                for i in context_idxs], [losses[i] for i in context_idxs], [], None)
+            context_idxs = [i for i in range(0, len(bboxes)) if losses[i] > 0]
+            captions = ([self._ungrounded_captions[i]
+                         for i in context_idxs], [losses[i] for i in context_idxs], [], None)
             self._publish_grounding_result(
-                boxes, context_idxs, pomdp_init_data)  # visualization of RViz
-            return boxes, top_idx, context_idxs, pomdp_init_data
+                bboxes, context_idxs, captions)  # visualization of RViz
+            return bboxes, top_idx, context_idxs, captions
 
-        top_idx, context_idxs, pomdp_init_data = self._ground_query(expr, boxes)
-        # context_idxs.append(top_idx)
+        # else if user expression is not empty, ground user query
+        else:
+            top_idx, context_idxs, captions = self._ground_query(expr, bboxes)
 
-        self._publish_grounding_result(boxes, context_idxs)  # visualization of RViz
-        return boxes, top_idx, context_idxs, pomdp_init_data
+        self._publish_grounding_result(bboxes, context_idxs)  # visualization of RViz
+        return bboxes, top_idx, context_idxs, captions
+
+    def ground_img_with_bbox(self, image, bboxes, expr):
+        '''
+        Ground images with predefined bounding box
+        @param image, cv2_img
+        @param bbox, a list of bbox each in [top, left, btm, right] format
+        @param expr, user expression
+        @return boxes, the detected bounding boxes
+                top_idx, the index of the most likely boudning box in boxes
+                context_idx, maps from captions index tp bbox indexs. 
+                             The first value in context_idx is the index of bounding box for the first value in sem_captions.
+                             For example, sem_caption for most likely bbox is sem_caption[context_idx.index(top_idx)]
+                captions, (sem_captions, sem_probs, rel_captions, rel_probs) tuple
+        '''
+
+        # preprocess data
+        # convert image to ros image
+        img_msg = CvBridge().cv2_to_imgmsg(image, "rgb8")
+        # convert 2d bbox list to 1d
+        bboxes_1d = [i for bbox in bboxes for i in bbox]
+        print(bboxes_1d)
+
+        # load image, extract and store feature vectors for each bounding box
+        goal = action_controller.msg.DenseRefexpLoadBBoxesGoal()
+        goal.input = img_msg
+        goal.boxes = bboxes_1d
+        self._load_bbox_client.send_goal(goal)
+        self._load_bbox_client.wait_for_result()
+        load_result = self._load_bbox_client.get_result()
+
+        rospy.loginfo("ground_img_with_bbox, result received")
+        rospy.loginfo("bbox captions: {}".format(load_result.captions))
+        rospy.loginfo("bbox caption scores: {}".format(load_result.scores))
+        self._ungrounded_captions = np.array(load_result.captions)
+        ungrounded_caption_scores = load_result.scores
+
+        # if user exprssion is empty, just generate captions for image
+        if expr == '':
+            rospy.loginfo("Ingress: empty query string received, returning ungrounded result")
+            top_idx = 0
+            context_idxs = [i for i in range(0, len(bboxes))]  # bbox index
+            captions = ([self._ungrounded_captions[i]
+                         for i in context_idxs], [ungrounded_caption_scores[i] for i in context_idxs], [], None)
+            self._publish_grounding_result(bboxes, context_idxs, captions)  # visualization of RViz
+            return bboxes, top_idx, context_idxs, captions
+
+        # else if user expression is not empty, ground user query
+        else:
+            top_idx, context_idxs, captions = self._ground_query(expr, bboxes)
+
+        self._publish_grounding_result(bboxes, context_idxs)  # visualization of RViz
+        return bboxes, top_idx, context_idxs, captions
 
 
 if __name__ == '__main__':
