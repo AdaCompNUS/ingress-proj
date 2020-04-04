@@ -294,7 +294,11 @@ class Ingress():
         run the full grounding pipeline
         @param image, cv2 img
         @param expr, string, user input to describe the target object
-        @return boxes, the most likely bounding boxes. 
+        @return boxes, the detected bounding boxes
+                top_idx, the index of the most likely boudning box in boxes
+                context_idx, maps from captions index tp bbox indexs. 
+                             The first value in context_idx is the index of bounding box for the first value in sem_captions.
+                             For example, sem_caption for most likely bbox is sem_caption[context_idx.index(top_idx)]
                 captions, (sem_captions, sem_probs, rel_captions, rel_probs) tuple
         '''
 
@@ -312,11 +316,11 @@ class Ingress():
             top_idx = 0
             context_idxs = [i for i in range(0, len(bboxes)) if losses[i] > 0]
             captions = ([self._ungrounded_captions[i]
-                                for i in context_idxs], [losses[i] for i in context_idxs], [], None)
+                         for i in context_idxs], [losses[i] for i in context_idxs], [], None)
             self._publish_grounding_result(
                 bboxes, context_idxs, captions)  # visualization of RViz
             return bboxes, top_idx, context_idxs, captions
-        
+
         # else if user expression is not empty, ground user query
         else:
             top_idx, context_idxs, captions = self._ground_query(expr, bboxes)
@@ -330,7 +334,11 @@ class Ingress():
         @param image, cv2_img
         @param bbox, a list of bbox each in [top, left, btm, right] format
         @param expr, user expression
-        @return boxes, the most likely bounding boxes. 
+        @return boxes, the detected bounding boxes
+                top_idx, the index of the most likely boudning box in boxes
+                context_idx, maps from captions index tp bbox indexs. 
+                             The first value in context_idx is the index of bounding box for the first value in sem_captions.
+                             For example, sem_caption for most likely bbox is sem_caption[context_idx.index(top_idx)]
                 captions, (sem_captions, sem_probs, rel_captions, rel_probs) tuple
         '''
 
@@ -350,8 +358,8 @@ class Ingress():
         load_result = self._load_bbox_client.get_result()
 
         rospy.loginfo("ground_img_with_bbox, result received")
-        # rospy.loginfo("captions: {}".format(load_result.captions))
-        # rospy.loginfo("scores: {}".format(load_result.scores))
+        rospy.loginfo("bbox captions: {}".format(load_result.captions))
+        rospy.loginfo("bbox caption scores: {}".format(load_result.scores))
         self._ungrounded_captions = np.array(load_result.captions)
         ungrounded_caption_scores = load_result.scores
 
@@ -359,18 +367,19 @@ class Ingress():
         if expr == '':
             rospy.loginfo("Ingress: empty query string received, returning ungrounded result")
             top_idx = 0
-            context_idxs = [i for i in range(0, len(bboxes))] # bbox index
+            context_idxs = [i for i in range(0, len(bboxes))]  # bbox index
             captions = ([self._ungrounded_captions[i]
-                                for i in context_idxs], [ungrounded_caption_scores[i] for i in context_idxs], [], None)
+                         for i in context_idxs], [ungrounded_caption_scores[i] for i in context_idxs], [], None)
             self._publish_grounding_result(bboxes, context_idxs, captions)  # visualization of RViz
             return bboxes, top_idx, context_idxs, captions
-        
+
         # else if user expression is not empty, ground user query
         else:
             top_idx, context_idxs, captions = self._ground_query(expr, bboxes)
 
         self._publish_grounding_result(bboxes, context_idxs)  # visualization of RViz
         return bboxes, top_idx, context_idxs, captions
+
 
 if __name__ == '__main__':
     rospy.init_node('ingress_ros')
