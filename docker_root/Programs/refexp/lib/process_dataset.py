@@ -16,7 +16,7 @@ import cv2
 from cv_bridge import CvBridge, CvBridgeError
 
 import actionlib
-import action_controller.msg
+import ingress_msgs.msg
 import copy
 
 sys.path.append('./Google_Refexp_toolbox/google_refexp_py_lib')
@@ -721,11 +721,11 @@ def process_dataset(experiment_paths, experiment_config):
           (sg.num_pads, sg.num_outs, sg.num_truncates, sg.num_outs)
 
 
-# Setup image publisher for localization 
+# Setup image publisher for localization
 #rospy.init_node('LocalizationImagePublisher', anonymous=True)
 
-#client = actionlib.SimpleActionClient('extract_features', action_controller.msg.ExtractFeaturesAction)
-#client.wait_for_server()  
+#client = actionlib.SimpleActionClient('extract_features', ingress_msgs.msg.ExtractFeaturesAction)
+#client.wait_for_server()
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()

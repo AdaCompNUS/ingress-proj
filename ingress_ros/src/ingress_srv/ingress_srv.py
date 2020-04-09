@@ -16,8 +16,8 @@ import math
 from argparse import ArgumentParser
 from datetime import datetime
 
-import action_controller.msg
-import action_controller.srv
+import ingress_msgs.msg
+import ingress_msgs.srv
 
 
 # Settings
@@ -39,33 +39,33 @@ class Ingress():
     def __init__(self):
         # wait for grounding load server
         self._load_client = actionlib.SimpleActionClient(
-            'dense_refexp_load', action_controller.msg.DenseRefexpLoadAction)
+            'dense_refexp_load', ingress_msgs.msg.DenseRefexpLoadAction)
         rospy.loginfo("DemoManager: 1. Waiting for dense_refexp_load action server ...")
         self._self_captions = []
         self._load_client.wait_for_server()
 
         # wait for ground bbox load server
         self._load_bbox_client = actionlib.SimpleActionClient(
-            'dense_refexp_load_bboxes', action_controller.msg.DenseRefexpLoadBBoxesAction)
+            'dense_refexp_load_bboxes', ingress_msgs.msg.DenseRefexpLoadBBoxesAction)
         rospy.loginfo("1. Waiting for dense_refexp_load_bboxes action server ...")
         self._load_bbox_client.wait_for_server()
 
         # wait for relevancy clustering server
         self._relevancy_client = actionlib.SimpleActionClient(
-            'relevancy_clustering', action_controller.msg.RelevancyClusteringAction)
+            'relevancy_clustering', ingress_msgs.msg.RelevancyClusteringAction)
         rospy.loginfo("DemoManager: 2. Waiting for relevancy_clustering action server ...")
         self._relevancy_client.wait_for_server()
 
         # wait for grounding query server
         self._query_client = actionlib.SimpleActionClient(
-            'boxes_refexp_query', action_controller.msg.BoxesRefexpQueryAction)
+            'boxes_refexp_query', ingress_msgs.msg.BoxesRefexpQueryAction)
         rospy.loginfo("DemoManager: 3. Waiting for boxes_refexp_query action server ...")
         self._rel_captions = []
         self._query_client.wait_for_server()
 
         # meteor score client:
         self._meteor_score_client = rospy.ServiceProxy(
-            'meteor_score', action_controller.srv.MeteorScore)
+            'meteor_score', ingress_msgs.srv.MeteorScore)
 
         # publisher for Ingress grounding results
         self._grounding_result_pub = rospy.Publisher(
@@ -81,7 +81,7 @@ class Ingress():
         output: bounding boxes
         '''
 
-        goal = action_controller.msg.DenseRefexpLoadGoal(image)
+        goal = ingress_msgs.msg.DenseRefexpLoadGoal(image)
         rospy.loginfo("_ground_load: sending goal")
         self._load_client.send_goal(goal)
         rospy.loginfo("_ground_load: waiting for result")
@@ -153,7 +153,7 @@ class Ingress():
         self._context_boxes_idxs = None
 
         # relevancy
-        relevancy_goal = action_controller.msg.RelevancyClusteringGoal(query, incorrect_idxs)
+        relevancy_goal = ingress_msgs.msg.RelevancyClusteringGoal(query, incorrect_idxs)
         self._relevancy_client.send_goal(relevancy_goal)
         self._relevancy_client.wait_for_result()
         self._relevancy_result = self._relevancy_client.get_result()
@@ -181,7 +181,7 @@ class Ingress():
         #     selection_orig_idx) if semantic_softmax_orig_idxs[idx] > VALID_MIN_RELEVANCY_SCORE]
         # selection_orig_idx = list(np.take(selection_orig_idx, pruned_selection_orig_idx))
         # self._relevancy_result.selection_orig_idx = selection_orig_idx
-        rospy.loginfo("pruned index {}".format(selection_orig_idx))
+        # rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
         if len(selection_orig_idx) == 0:
             rospy.logwarn("Ingress_srv: no object detected")
@@ -189,7 +189,7 @@ class Ingress():
 
         # ground the query
         selected_boxes = np.take(boxes, selection_orig_idx, axis=0)
-        query_goal = action_controller.msg.BoxesRefexpQueryGoal(
+        query_goal = ingress_msgs.msg.BoxesRefexpQueryGoal(
             query, np.array(selected_boxes).ravel(), selection_orig_idx, incorrect_idxs)
         self._query_client.send_goal(query_goal)
         self._query_client.wait_for_result()
@@ -225,7 +225,7 @@ class Ingress():
 
         # send expression for relevancy clustering
         incorrect_idxs = []
-        relevancy_goal = action_controller.msg.RelevancyClusteringGoal(query, incorrect_idxs)
+        relevancy_goal = ingress_msgs.msg.RelevancyClusteringGoal(query, incorrect_idxs)
         self._relevancy_client.send_goal(relevancy_goal)
         self._relevancy_client.wait_for_result()
         new_relevancy_result = self._relevancy_client.get_result()
@@ -234,7 +234,7 @@ class Ingress():
         # ground the new query with old relevancy clustering
         selection_orig_idx = self._relevancy_result.selection_orig_idx
         selected_boxes = np.take(boxes, selection_orig_idx, axis=0)
-        query_goal = action_controller.msg.BoxesRefexpQueryGoal(
+        query_goal = ingress_msgs.msg.BoxesRefexpQueryGoal(
             query, np.array(selected_boxes).ravel(), selection_orig_idx, incorrect_idxs)
         self._query_client.send_goal(query_goal)
         self._query_client.wait_for_result()
@@ -407,7 +407,7 @@ class Ingress():
         print(bboxes_1d)
 
         # load image, extract and store feature vectors for each bounding box
-        goal = action_controller.msg.DenseRefexpLoadBBoxesGoal()
+        goal = ingress_msgs.msg.DenseRefexpLoadBBoxesGoal()
         goal.input = img_msg
         goal.boxes = bboxes_1d
         if true_names is not None:

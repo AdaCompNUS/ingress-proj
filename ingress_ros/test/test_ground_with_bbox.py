@@ -6,7 +6,7 @@ import cv2
 from cv_bridge import CvBridge, CvBridgeError
 import xml.etree.ElementTree as ET
 import actionlib
-import action_controller.msg
+import ingress_msgs.msg
 import copy
 import numpy as np
 import os

@@ -10,7 +10,7 @@ import cv2
 from cv_bridge import CvBridge, CvBridgeError
 
 import actionlib
-import action_controller.msg
+import ingress_msgs.msg
 import copy
 
 
@@ -87,7 +87,7 @@ class ImageFeatureExtractor:
 
   def extract_features_from_img(self, img_path, boxes, feature_layer='fc7'):
 
-    fc7_feats = np.zeros((len(boxes)-1, 4096)) 
+    fc7_feats = np.zeros((len(boxes)-1, 4096))
     fc7_img = np.zeros((1, 4096))
     obj_classes = np.zeros((len(boxes)-1, 10)) # top 10 classes
 
@@ -147,7 +147,7 @@ class ImageFeatureExtractor:
     img_bbox_pairs = [(img_id, [x1,y1,x2,y2]), ...]
     """
     if os.path.exists(output_h5_file):
-      print ("Output file already exists: %s" % output_h5_file) 
+      print ("Output file already exists: %s" % output_h5_file)
       h5file = h5py.File(output_h5_file, 'r+')
       extracted_img_bbox_pairs = set([i for i in h5file.keys() if i != 'imgs_with_errors'])
     else:
@@ -231,9 +231,9 @@ class ImageFeatureExtractor:
           padded_yc = roi[1] + padded_h/2.0
           box = [padded_xc, padded_yc, padded_w, padded_h] # xc, yc, w, h
 
-          goal = action_controller.msg.ExtractFeaturesGoal(1, msg_frame, box)
+          goal = ingress_msgs.msg.ExtractFeaturesGoal(1, msg_frame, box)
           client.send_goal(goal)
-          client.wait_for_result()    
+          client.wait_for_result()
           feature_results = client.get_result()
 
           if str(img_bbox_pairs[j]) not in h5file:
@@ -266,7 +266,7 @@ class ImageFeatureExtractor:
     img_bbox_pairs = [(img_id, [x1,y1,x2,y2]), ...]
     """
     if os.path.exists(output_h5_file):
-      print ("Output file already exists: %s" % output_h5_file) 
+      print ("Output file already exists: %s" % output_h5_file)
       h5file = h5py.File(output_h5_file, 'r+')
       extracted_img_bbox_pairs = set([i for i in h5file.keys() if i != 'imgs_with_errors'])
     else:

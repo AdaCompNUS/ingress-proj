@@ -1,0 +1,19 @@
+# NOTE: This action should only called after Localize.action
+
+#goal definition
+string query
+int32 k
+float32 min_loss_threshold
+---
+#result definition
+int32[] frame_ids # top k matches
+float32[] captioning_losses # of top k matches loss from running the model forward with the query
+float32[] fc7_vecs # 4096k number of CNN feature vectors 
+float32[] boxes # 4k number of bounding values Eg: (x1, y1, w1, h1 ...)
+int32[] meteor_ranks # meteor ranks of top k lowest loss result
+int32[] orig_idx # k orignal index of the boxes
+float32[] meteor_scores # k raw meteor similarity scores to caption
+float32 search_time
+--- 
+#feedback
+
