@@ -10,6 +10,7 @@ from collections import defaultdict, OrderedDict
 import matplotlib.image as mpimg
 import time
 import copy
+import action_controller.srv
 import action_controller.msg
 import actionlib
 from cv_bridge import CvBridge, CvBridgeError
@@ -35,6 +36,7 @@ DEBUG_PRINT = False
 VISUALIZE = False
 
 AMBUGUITY_THRESHOLD = 0.1
+NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD = 0.1
 
 
 class ComprehensionExperiment:
@@ -160,6 +162,9 @@ class MILContextComprehension(ComprehensionExperiment):
         self._boxes_refexp_query_service = actionlib.SimpleActionServer(
             'boxes_refexp_query', action_controller.msg.BoxesRefexpQueryAction, execute_cb=self.boxes_refexp_query, auto_start=False)
 
+        self._meteor_service = rospy.Service(
+            'meteor_score', action_controller.srv.MeteorScore, self._calc_meteor_score)
+
         self._load_service.start()
         self._load_bboxes_service.start()
         self._query_service.start()
@@ -173,6 +178,10 @@ class MILContextComprehension(ComprehensionExperiment):
         self._no_confidence_prune = no_confidence_prune
         self._disambiguate = disambiguate
         self._min_cluster_size = min_cluster_size
+
+    def _calc_meteor_score(self, req):
+        score = self._meteor.score(req.ref, req.tar)
+        return action_controller.srv.MeteorScoreResponse(score)
 
     def box2box_distance(self, boxA, boxB):
         centerA_x = boxA[0] + 0.5 * boxA[2]
@@ -193,7 +202,7 @@ class MILContextComprehension(ComprehensionExperiment):
         # q_similarity_score = [self._doc2vec.cosine_sim(query, caption) for caption in self.o_captions]
         # q_similarity_score = [nltk.translate.bleu_score.sentence_bleu([query.split()], caption.split()) for caption in self.o_captions]
         for c_idx in range(len(self.o_captions)):
-            print query, self.o_captions[q_orig_idx[c_idx]]
+            print("unpack and prune 1", query, self.o_captions[q_orig_idx[c_idx]])
         q_similarity_score = [self._meteor.score(
             query, self.o_captions[q_orig_idx[c_idx]]) for c_idx in range(len(self.o_captions))]
 
@@ -217,7 +226,7 @@ class MILContextComprehension(ComprehensionExperiment):
         # debug: print METEOR scores
         print "\nQuery: %s" % (query)
         for c, cap in enumerate(self.o_captions):
-            print "loss: %f, soft: %f, meteor: %f - '%s'" % (
+            print "loss: %f, softmax: %f, meteor: %f - '%s'" % (
                 q_captioning_losses[c], dense_softmax[c], q_similarity_score[c], self.o_captions[q_orig_idx[c]])
 
         # remove incorrect selections from previous query
@@ -354,6 +363,7 @@ class MILContextComprehension(ComprehensionExperiment):
         self.img = CvBridge().imgmsg_to_cv2(goal.input, desired_encoding="passthrough")
         self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)
         self.o_boxes = np.reshape(goal.boxes, (-1, 4))
+        bbox_obj_names = goal.bbox_obj_names
 
         # add whole image context bbox
         bboxes = list(self.o_boxes)
@@ -367,6 +377,10 @@ class MILContextComprehension(ComprehensionExperiment):
         extraction_end = time.time()
         print "Extraction Time: %f" % (extraction_end - extraction_start)
 
+        if len(bbox_obj_names) > 0:
+            print("Replacing object names!!!")
+            self._replace_object_names(self.o_captions, bbox_obj_names)
+
         self.o_fc7_whole = [dense_fc7_feats[len(dense_fc7_feats)-1]]
         self.o_fc7_feats = dense_fc7_feats[:-1]
 
@@ -377,6 +391,35 @@ class MILContextComprehension(ComprehensionExperiment):
         if not self._combined_semaphore:
             self._load_bboxes_service.set_succeeded(result)
         return result
+
+    def _replace_object_names(self, captions, true_names):
+        '''
+        Replace object name in captions if it is not close to the true object name
+        '''
+
+        # input validity check:
+        if len(captions) != len(true_names) + 1:
+            # captions include a caption for the whole image, therefore, the length is 1 more than len(true_names)
+            rospy.logerr("_replace_object_names: captions len != true_names len")
+            return False
+
+        for i in range(len(true_names)):
+            meteor_score = self._meteor.score(captions[i], true_names[i])
+            rospy.loginfo("captions: {}, true_names: {}, score {}".format(
+                captions[i], true_names[i], meteor_score))
+            if meteor_score < NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD:
+                # replace the whole caption
+                captions[i] = true_names[i]
+                # change score to 1.0 to indicate that the name is replaced TODO
+                # self.o_scores[i] = 1.0
+
+                # TODO replace noun only
+                # l = captions[i].split() # split string into list
+                # noun_idx = self._get_noun_idx(l)
+                # l[noun_idx] = true_names[i]
+                # captions[i] = " ".join(l) # join list into string
+
+        return True
 
     def relevancy_clustering(self, goal):
 
@@ -452,7 +495,8 @@ class MILContextComprehension(ComprehensionExperiment):
                         self.o_captions[idx_ref], self.o_captions[top_5_idxs[0]])
                     if m_score > best_meteor_sim:
                         best_meteor_sim = m_score
-                        print best_meteor_sim, self.o_captions[idx_ref], self.o_captions[top_5_idxs[0]]
+                        print("relevancy_clustering 1", best_meteor_sim,
+                              self.o_captions[idx_ref], self.o_captions[top_5_idxs[0]])
 
             # VGG16 classifier
             # p_top_k_fc7_feats = np.zeros((k,4096))
@@ -467,7 +511,8 @@ class MILContextComprehension(ComprehensionExperiment):
 
             is_visually_confident = True if (
                 best_meteor_sim < 0.5 and dense_softmax[0] > 0.8) else False
-            print is_visually_confident, best_meteor_sim, dense_softmax[0]
+            print("relevancy_clustering 2", is_visually_confident,
+                  best_meteor_sim, dense_softmax[0])
 
             if not self._no_confidence_prune and is_visually_confident:
                 selection_orig_idx = [top_5_idxs[0]]
@@ -1060,7 +1105,7 @@ class MILContextComprehension(ComprehensionExperiment):
     #   return result
 
     def load_and_query(self, goal):
-        ''' 
+        '''
         Not Working Yet!
         '''
 
@@ -1418,7 +1463,7 @@ if __name__ == "__main__":
                         help='Test time proposal source [gt|mcg]')
     parser.add_argument('--visualize', action="store_true", default=False,
                         help='Display comprehension results')
-    parser.add_argument('--no_confidence_prune', action="store_true", default=False)
+    parser.add_argument('--no_confidence_prune', action="store_true", default=True)
     parser.add_argument('--disambiguate', action="store_true", default=False)
     parser.add_argument("--min_cluster_size", dest="min_cluster_size", type=int,
                         help="relevancy clustering minimum size", default=1)
@@ -1437,3 +1482,5 @@ if __name__ == "__main__":
                                            test_proposal_source=args.proposal_source, test_visualize=args.visualize)
         run_comprehension_experiment(dataset, exp_paths, exp_config, no_confidence_prune=args.no_confidence_prune,
                                      disambiguate=args.disambiguate, min_cluster_size=args.min_cluster_size)
+
+    # run_meteor_score_server

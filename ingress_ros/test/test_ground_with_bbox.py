@@ -19,6 +19,7 @@ def get_bboxes_from_xml(xml_path):
     root = xml_tree.getroot()
 
     bboxes = []
+    bbox_obj_names = []
     for obj in root.findall('object'):
         bbox_tmp = obj.find('bndbox')
         bbox = []
@@ -28,8 +29,12 @@ def get_bboxes_from_xml(xml_path):
         bbox.append(float(bbox_tmp.find('ymax').text) - float(bbox_tmp.find('ymin').text))
         bboxes.append(bbox)
 
+        obj_name = obj.find('name').text
+        bbox_obj_names.append(obj_name)
+
     rospy.loginfo("bboxes found: {}".format(bboxes))
-    return bboxes
+    rospy.loginfo("bbox_obj_names : {}".format(bbox_obj_names))
+    return bboxes, bbox_obj_names
 
 
 if __name__ == '__main__':
@@ -45,14 +50,18 @@ if __name__ == '__main__':
                 img = cv2.imread(img_path, cv2.IMREAD_COLOR)
 
                 xml_path = os.path.splitext(img_path)[0] + '.xml'
-                bboxes = get_bboxes_from_xml(xml_path)
+                bboxes, bbox_obj_names = get_bboxes_from_xml(xml_path)
             except Exception as e:
                 rospy.logerr(e)
 
             expr = raw_input("Enter user expression: ")
 
+            # with name replacement
             bboxes, top_idx, context_idxs, captions = ingress_service.ground_img_with_bbox(
-                img, bboxes, expr)
+                img, bboxes, expr, true_names = bbox_obj_names)
+            # without name replacement
+            # bboxes, top_idx, context_idxs, captions = ingress_service.ground_img_with_bbox(
+            #     img, bboxes, expr)
             sem_captions, sem_probs, rel_captions, rel_probs = captions
             # rospy.loginfo("top index = {}, context_idx = {}".format(top_idx, context_idxs))
             # rospy.loginfo("sem_captions: {}".format(sem_captions))

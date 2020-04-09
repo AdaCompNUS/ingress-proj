@@ -17,6 +17,7 @@ from argparse import ArgumentParser
 from datetime import datetime
 
 import action_controller.msg
+import action_controller.srv
 
 
 # Settings
@@ -26,6 +27,7 @@ PUBLISH_DEBUG_RESULT = False
 # Constants
 VALID_MIN_CLUSTER_SIZE = 500  # points
 VALID_MIN_RELEVANCY_SCORE = 0.05
+NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD = 0.1
 
 
 def dbg_print(text):
@@ -60,6 +62,10 @@ class Ingress():
         rospy.loginfo("DemoManager: 3. Waiting for boxes_refexp_query action server ...")
         self._rel_captions = []
         self._query_client.wait_for_server()
+
+        # meteor score client:
+        self._meteor_score_client = rospy.ServiceProxy(
+            'meteor_score', action_controller.srv.MeteorScore)
 
         # publisher for Ingress grounding results
         self._grounding_result_pub = rospy.Publisher(
@@ -133,7 +139,7 @@ class Ingress():
         '''
         query a specific expression with the grounding model
         input: expr
-        output: best bounding box index, other box indexes sorted by grounding scores 
+        output: best bounding box index, other box indexes sorted by grounding scores
         '''
 
         query = expr
@@ -163,18 +169,18 @@ class Ingress():
         # self._relevancy_result.selection_orig_idx = list(selection_orig_idx)
 
         # clean by threshold
-        semantic_softmax = np.array(self._relevancy_result.softmax_probs)
+        # semantic_softmax = np.array(self._relevancy_result.softmax_probs)
 
-        all_orig_idx = self._relevancy_result.all_orig_idx
-        # this is disgusting.... puke! You should be ashamed of yourself Mohit.
-        semantic_softmax_orig_idxs = [-1.] * len(all_orig_idx)
-        for count, idx in enumerate(all_orig_idx):
-            semantic_softmax_orig_idxs[idx] = semantic_softmax[count]
+        # all_orig_idx = self._relevancy_result.all_orig_idx
+        # # this is disgusting.... puke! You should be ashamed of yourself Mohit.
+        # semantic_softmax_orig_idxs = [-1.] * len(all_orig_idx)
+        # for count, idx in enumerate(all_orig_idx):
+        #     semantic_softmax_orig_idxs[idx] = semantic_softmax[count]
 
-        pruned_selection_orig_idx = [i for i, idx in enumerate(
-            selection_orig_idx) if semantic_softmax_orig_idxs[idx] > VALID_MIN_RELEVANCY_SCORE]
-        selection_orig_idx = list(np.take(selection_orig_idx, pruned_selection_orig_idx))
-        self._relevancy_result.selection_orig_idx = selection_orig_idx
+        # pruned_selection_orig_idx = [i for i, idx in enumerate(
+        #     selection_orig_idx) if semantic_softmax_orig_idxs[idx] > VALID_MIN_RELEVANCY_SCORE]
+        # selection_orig_idx = list(np.take(selection_orig_idx, pruned_selection_orig_idx))
+        # self._relevancy_result.selection_orig_idx = selection_orig_idx
         rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
         if len(selection_orig_idx) == 0:
@@ -289,6 +295,57 @@ class Ingress():
         self._grounding_result_pub.publish(result_img)
         rospy.loginfo("grounding result published")
 
+    """
+    def _replace_object_names(self, captions, true_names):
+        '''
+        Replace object name in captions if it is not close to the true object name
+        '''
+
+        # input validity check:
+        if len(captions) != len(true_names) + 1:
+            # captions include a caption for the whole image, therefore, the length is 1 more than len(true_names)
+            rospy.logerr("_replace_object_names: captions len != true_names len")
+            return False
+
+        for i in range(len(true_names)):
+            meteor_score = self._get_meteor_score(captions[i], true_names[i])
+            rospy.loginfo("captions: {}, true_names: {}, score {}".format(
+                captions[i], true_names[i], meteor_score))
+            if meteor_score < NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD:
+                # replace the whole caption
+                captions[i] = true_names[i]
+                # change score to 1.0 to indicate that the name is replaced
+                self._ungrounded_caption_scores[i] = 1.0
+
+                # TODO replace noun only
+                # l = captions[i].split() # split string into list
+                # noun_idx = self._get_noun_idx(l)
+                # l[noun_idx] = true_names[i]
+                # captions[i] = " ".join(l) # join list into string
+
+        return True
+
+    def _get_meteor_score(self, text1, text2):
+        resp = self._meteor_score_client(text1, text2)
+        return resp.score
+
+
+    def _get_noun_idx(self, str_list):
+        # Hardcode to find noun
+        # between 'a', 'the' / 'colour' and 'on', 'in'
+        res_idx = -1
+        for i in reversed(range(len(str_list))):
+            if str_list[i] in COLOUR_LIST or str_list[i] in PREFIX_LIST:
+                res_idx = i + 1
+                break
+
+            if str_list[i] in PREPOSITION_LIST:
+                res_idx = i - 1
+
+
+        return
+    """
+
     def ground(self, image, expr):
         '''
         run the full grounding pipeline
@@ -296,7 +353,7 @@ class Ingress():
         @param expr, string, user input to describe the target object
         @return boxes, the detected bounding boxes
                 top_idx, the index of the most likely boudning box in boxes
-                context_idx, maps from captions index tp bbox indexs. 
+                context_idx, maps from captions index tp bbox indexs.
                              The first value in context_idx is the index of bounding box for the first value in sem_captions.
                              For example, sem_caption for most likely bbox is sem_caption[context_idx.index(top_idx)]
                 captions, (sem_captions, sem_probs, rel_captions, rel_probs) tuple
@@ -328,7 +385,7 @@ class Ingress():
         self._publish_grounding_result(bboxes, context_idxs)  # visualization of RViz
         return bboxes, top_idx, context_idxs, captions
 
-    def ground_img_with_bbox(self, image, bboxes, expr):
+    def ground_img_with_bbox(self, image, bboxes, expr, true_names=None):
         '''
         Ground images with predefined bounding box
         @param image, cv2_img
@@ -336,7 +393,7 @@ class Ingress():
         @param expr, user expression
         @return boxes, the detected bounding boxes
                 top_idx, the index of the most likely boudning box in boxes
-                context_idx, maps from captions index tp bbox indexs. 
+                context_idx, maps from captions index tp bbox indexs.
                              The first value in context_idx is the index of bounding box for the first value in sem_captions.
                              For example, sem_caption for most likely bbox is sem_caption[context_idx.index(top_idx)]
                 captions, (sem_captions, sem_probs, rel_captions, rel_probs) tuple
@@ -353,6 +410,11 @@ class Ingress():
         goal = action_controller.msg.DenseRefexpLoadBBoxesGoal()
         goal.input = img_msg
         goal.boxes = bboxes_1d
+        if true_names is not None:
+            # replace object names
+            rospy.loginfo("Ingress: replacing object names!")
+            goal.bbox_obj_names = true_names
+
         self._load_bbox_client.send_goal(goal)
         self._load_bbox_client.wait_for_result()
         load_result = self._load_bbox_client.get_result()
@@ -361,7 +423,7 @@ class Ingress():
         rospy.loginfo("bbox captions: {}".format(load_result.captions))
         rospy.loginfo("bbox caption scores: {}".format(load_result.scores))
         self._ungrounded_captions = np.array(load_result.captions)
-        ungrounded_caption_scores = load_result.scores
+        self._ungrounded_caption_scores = np.array(load_result.scores)
 
         # if user exprssion is empty, just generate captions for image
         if expr == '':
@@ -369,7 +431,7 @@ class Ingress():
             top_idx = 0
             context_idxs = [i for i in range(0, len(bboxes))]  # bbox index
             captions = ([self._ungrounded_captions[i]
-                         for i in context_idxs], [ungrounded_caption_scores[i] for i in context_idxs], [], None)
+                         for i in context_idxs], [self._ungrounded_caption_scores[i] for i in context_idxs], [], None)
             self._publish_grounding_result(bboxes, context_idxs, captions)  # visualization of RViz
             return bboxes, top_idx, context_idxs, captions
 
