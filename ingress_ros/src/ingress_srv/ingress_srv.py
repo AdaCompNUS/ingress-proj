@@ -332,7 +332,7 @@ class Ingress():
         '''
         Ground images with predefined bounding box
         @param image, cv2_img
-        @param bbox, a list of bbox each in [top, left, btm, right] format
+        @param bbox, a list of bbox each in [top, left, width, height] format
         @param expr, user expression
         @return boxes, the detected bounding boxes
                 top_idx, the index of the most likely boudning box in boxes
