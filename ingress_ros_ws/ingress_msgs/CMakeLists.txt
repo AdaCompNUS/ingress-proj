@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(action_controller)
+project(ingress_msgs)
 
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -28,9 +28,9 @@ find_package(catkin REQUIRED COMPONENTS
 include_directories(${catkin_INCLUDE_DIRS})
 link_directories(${catkin_LIBRARY_DIRS})
 
-add_message_files(
-  FILES
-)
+# add_message_files(
+#   FILES
+# )
 
 add_service_files(
   FILES
@@ -58,10 +58,7 @@ add_action_files(
 generate_messages(
   DEPENDENCIES
   std_msgs
-  # trajectory_msgs
   actionlib_msgs
-  action_controller
-  # tum_ardrone
   dynamic_reconfigure
   sensor_msgs
 )

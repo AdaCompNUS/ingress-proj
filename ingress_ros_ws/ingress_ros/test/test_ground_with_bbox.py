@@ -58,14 +58,17 @@ if __name__ == '__main__':
 
             # with name replacement
             bboxes, top_idx, context_idxs, captions = ingress_service.ground_img_with_bbox(
-                img, bboxes, expr, true_names = bbox_obj_names)
+                img, bboxes, expr, true_names=bbox_obj_names)
             # without name replacement
             # bboxes, top_idx, context_idxs, captions = ingress_service.ground_img_with_bbox(
             #     img, bboxes, expr)
             sem_captions, sem_probs, rel_captions, rel_probs = captions
             # rospy.loginfo("top index = {}, context_idx = {}".format(top_idx, context_idxs))
-            # rospy.loginfo("sem_captions: {}".format(sem_captions))
-            # rospy.loginfo("rel_captions: {}".format(rel_captions))
+            rospy.loginfo("sem_captions: {}".format(sem_captions))
+            rospy.loginfo("sem_probs: {}".format(sem_probs))
+            rospy.loginfo("rel_captions: {}".format(rel_captions))
+            rospy.loginfo("rel_probs: {}".format(rel_probs))
+
             rospy.loginfo("Top bbox is {}".format(bboxes[top_idx]))
             rospy.loginfo(
                 "Top bbox self-referential caption: {}".format(sem_captions[context_idxs.index(top_idx)]))

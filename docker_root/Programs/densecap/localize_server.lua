@@ -249,10 +249,10 @@ end
 opt = cmd:parse(arg)
 
 -- Setup Localization Server
-local as_localize_server = actionlib.ActionServer(nh, 'dense_localize', 'action_controller/Localize')
-local as_localize_probs_server = actionlib.ActionServer(nh, 'dense_localize_probs', 'action_controller/LocalizeProbs')
-local as_query_server = actionlib.ActionServer(nh, 'localize_query', 'action_controller/LocalizeQuery')
-local as_extract_server = actionlib.ActionServer(nh, 'extract_features', 'action_controller/ExtractFeatures')
+local as_localize_server = actionlib.ActionServer(nh, 'dense_localize', 'ingress_msgs/Localize')
+local as_localize_probs_server = actionlib.ActionServer(nh, 'dense_localize_probs', 'ingress_msgs/LocalizeProbs')
+local as_query_server = actionlib.ActionServer(nh, 'localize_query', 'ingress_msgs/LocalizeQuery')
+local as_extract_server = actionlib.ActionServer(nh, 'extract_features', 'ingress_msgs/ExtractFeatures')
 
 as_localize_server:registerGoalCallback(Localize_Action_Server)
 as_localize_probs_server:registerGoalCallback(Localize_Probs_Action_Server)

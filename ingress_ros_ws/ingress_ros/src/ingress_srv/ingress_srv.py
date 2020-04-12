@@ -159,7 +159,7 @@ class Ingress():
         self._relevancy_result = self._relevancy_client.get_result()
         # selection_orig_idx = self._relevancy_client.get_result().selection_orig_idx
         selection_orig_idx = self._relevancy_result.selection_orig_idx
-        rospy.loginfo("orig index {}".format(selection_orig_idx))
+        rospy.loginfo("after relevancy clustering: bbox index {}".format(selection_orig_idx))
 
         # clean
         # num_points_arr = [list(self._segment_pc(boxes[idx]))[1] for idx in selection_orig_idx]
@@ -199,6 +199,9 @@ class Ingress():
         top_idx = query_result.top_box_idx
         context_boxes_idxs = [top_idx] + list(query_result.context_boxes_idxs)
         self._context_boxes_idxs = list(context_boxes_idxs)
+
+        rospy.loginfo("after relation query: bbox index {}".format(self._context_boxes_idxs))
+        rospy.loginfo("after relation query: top idx {}".format(top_idx))
 
         # preprocess captions
         captions = self._process_captions(
