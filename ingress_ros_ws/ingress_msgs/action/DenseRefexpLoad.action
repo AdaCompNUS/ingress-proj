@@ -1,0 +1,12 @@
+#goal definition
+sensor_msgs/Image input # image
+---
+#result definition
+string[] captions # N number of semantic description
+float32[] boxes # 4N number of bounding values Eg: (x1, y1, w1, h1 .... xN, yN, wN, hN)
+float32[] scores # N number of captioning scores
+float32[] word_probs # N * 17 words * 10510 tokens 
+---
+#feedback
+
+ 

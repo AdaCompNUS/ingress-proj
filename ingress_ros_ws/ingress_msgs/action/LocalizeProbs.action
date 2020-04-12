@@ -1,0 +1,13 @@
+#goal definition
+int32 frame_id
+sensor_msgs/Image input
+---
+#result definition
+float32[] fc7_img # fc7 features of the whole image (4096)
+float32[] fc7_vecs # N fc7 feature vectors (4096 * N)
+float32[] word_probs # N * 17 words * 10510 tokens 
+float32[] boxes # 4N number of bounding values Eg: (x1, y1, w1, h1 .... xN, yN, wN, hN)
+float32[] scores # N number of bounding scores
+string[] captions # N number of semantic description
+---
+#feedback

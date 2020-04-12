@@ -1,0 +1,12 @@
+#goal definition
+sensor_msgs/Image input # image
+float32[] boxes # 4N number of bounding values Eg: (x1, y1, w1, h1 .... xN, yN, wN, hN)
+string[] bbox_obj_names
+
+---
+#result definition
+string[] captions # N number of semantic description
+float32[] scores # N number of captioning scores
+---
+#feedback
+

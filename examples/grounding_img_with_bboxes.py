@@ -6,7 +6,7 @@ import cv2
 from cv_bridge import CvBridge, CvBridgeError
 import xml.etree.ElementTree as ET
 import actionlib
-import action_controller.msg
+import ingress_msgs.msg
 import copy
 import numpy as np
 import os
@@ -32,7 +32,7 @@ def ground_img_with_bbox(load_client, img, bboxes):
 
     # load image, extract and store feature vectors for each bounding box
     img_msg = CvBridge().cv2_to_imgmsg(img, "rgb8")
-    goal = action_controller.msg.DenseRefexpLoadBBoxesGoal()
+    goal = ingress_msgs.msg.DenseRefexpLoadBBoxesGoal()
     goal.input = img_msg
     goal.boxes = bboxes
     load_client.send_goal(goal)
@@ -75,12 +75,12 @@ if __name__ == '__main__':
         # if you are stuck here, that means the servers are not ready
         # or your network connection is broken
         load_client = actionlib.SimpleActionClient(
-            'dense_refexp_load_bboxes', action_controller.msg.DenseRefexpLoadBBoxesAction)
+            'dense_refexp_load_bboxes', ingress_msgs.msg.DenseRefexpLoadBBoxesAction)
         rospy.loginfo("1. Waiting for dense_refexp_load_bboxes action server ...")
         load_client.wait_for_server()
 
         query_client = actionlib.SimpleActionClient(
-            'dense_refexp_query', action_controller.msg.DenseRefexpQueryAction)
+            'dense_refexp_query', ingress_msgs.msg.DenseRefexpQueryAction)
         rospy.loginfo("2. Waiting for dense_refexp_query action server ...")
         query_client.wait_for_server()
 

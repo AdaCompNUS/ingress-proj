@@ -1,0 +1,13 @@
+#goal definition
+string query
+float32 min_loss_threshold
+---
+#result definition
+int32[] frame_ids # top k matches
+float32[] captioning_losses # of top k matches loss from running the model forward with the query
+float32[] boxes # 4k number of bounding values Eg: (x1, y1, w1, h1 ...)
+int32[] meteor_ranks # meteor ranks of top k lowest loss result
+float32 search_time
+--- 
+#feedback
+
