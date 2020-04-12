@@ -14,8 +14,11 @@ msg/.*Goal\.msg$
 msg/.*Result\.msg$
 msg/_.*\.py$
 
+# user ignore files
+examples/images/
 
 
+# python files
 *~
 *.pyc
 

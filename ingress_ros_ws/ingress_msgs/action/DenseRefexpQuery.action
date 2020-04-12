@@ -1,0 +1,13 @@
+# NOTE: DenseRefexpQuery should only be called after DenseRefexpLoad
+#goal definition
+string query
+int32[] incorrect_idxs # indexes 
+---
+#result definition
+int32 top_box_idx # original index of top refexp result box
+int32[] context_boxes_idxs # original indexes of context objects
+bool is_ambiguous
+string[] predicted_captions
+--- 
+#feedback
+

@@ -7,12 +7,12 @@ import cv2
 from cv_bridge import CvBridge, CvBridgeError
 
 import actionlib
-import action_controller.msg
+import ingress_msgs.msg
 import copy
 import numpy as np
 
 
-OPENCV_IMSHOW = False # set this to True, if you want a GUI display for results
+OPENCV_IMSHOW = False  # set this to True, if you want a GUI display for results
 
 
 def ground():
@@ -24,45 +24,44 @@ def ground():
     # wait for action servers to show up
     # if you are stuck here, that means the servers are not ready
     # or your network connection is broken
-    load_client = actionlib.SimpleActionClient('dense_refexp_load', action_controller.msg.DenseRefexpLoadAction)
+    load_client = actionlib.SimpleActionClient(
+        'dense_refexp_load', ingress_msgs.msg.DenseRefexpLoadAction)
     rospy.loginfo("1. Waiting for dense_refexp_load action server ...")
     load_client.wait_for_server()
 
-    query_client = actionlib.SimpleActionClient('dense_refexp_query', action_controller.msg.DenseRefexpQueryAction)
+    query_client = actionlib.SimpleActionClient(
+        'dense_refexp_query', ingress_msgs.msg.DenseRefexpQueryAction)
     rospy.loginfo("2. Waiting for dense_refexp_query action server ...")
-    query_client.wait_for_server()    
-    
-    rospy.loginfo("Ingress server found! Ready.")
+    query_client.wait_for_server()
 
+    rospy.loginfo("Ingress server found! Ready.")
 
     # load image, extract and store feature vectors for objects
     # this can be done once per image. everytime the scene changes, you have to reload the image
-    img = cv2.imread(path,cv2.IMREAD_COLOR)
+    img = cv2.imread(path, cv2.IMREAD_COLOR)
     msg_frame = CvBridge().cv2_to_imgmsg(img, "rgb8")
-    goal = action_controller.msg.DenseRefexpLoadGoal(msg_frame)
+    goal = ingress_msgs.msg.DenseRefexpLoadGoal(msg_frame)
     load_client.send_goal(goal)
-    load_client.wait_for_result()  
+    load_client.wait_for_result()
     load_result = load_client.get_result()
 
     # load results: bounding boxes and self-ref captions for all objects (before grounding)
-    boxes = np.reshape(load_result.boxes, (-1, 4))      
+    boxes = np.reshape(load_result.boxes, (-1, 4))
     captions = np.array(load_result.captions)
-
 
     incorrect_idxs = []
     if OPENCV_IMSHOW:
         cv2.namedWindow('result', cv2.WINDOW_NORMAL)
         cv2.resizeWindow('result', img.shape[1], img.shape[0])
 
-
     # once the image has been loaded up, the grounding server can be repeatedly queried with expressions
     while True:
 
-        # [INPUT] referring expression 
+        # [INPUT] referring expression
         query = raw_input('Search Query: ').lower()
-        
-        # send expression for grounding 
-        goal = action_controller.msg.DenseRefexpQueryGoal(query, incorrect_idxs)
+
+        # send expression for grounding
+        goal = ingress_msgs.msg.DenseRefexpQueryGoal(query, incorrect_idxs)
         query_client.send_goal(goal)
         query_client.wait_for_result()
         query_result = query_client.get_result()
@@ -88,33 +87,30 @@ def ground():
 
             if count == len(context_boxes_idxs)-1:
                 # top result
-                cv2.rectangle(draw_img, (x1, y1), (x2, y2), (0,0,255), 12)
+                cv2.rectangle(draw_img, (x1, y1), (x2, y2), (0, 0, 255), 12)
             else:
                 # context boxes
-                cv2.rectangle(draw_img, (x1, y1), (x2, y2), (0,255,0), 2)
+                cv2.rectangle(draw_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-        
         if OPENCV_IMSHOW:
             cv2.imshow('result', draw_img)
             k = cv2.waitKey(0)
         else:
             cv2.imwrite('./grounding_result.png', draw_img)
 
-
         # ------------------------------------------------
-        # print captions 
+        # print captions
         print ""
         rospy.loginfo("Self Referential Captions: ")
         print self_captions
         print ""
-        
+
         if len(rel_captions) > 0:
             rospy.loginfo("Relational Captions: ")
             print rel_captions
             print ""
         else:
             rospy.logwarn("lib/comprehension_test.py was started without --disambiguate mode!")
-
 
     return True
 
