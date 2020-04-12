@@ -394,6 +394,8 @@ class Ingress():
         @param image, cv2_img
         @param bbox, a list of bbox each in [top, left, width, height] format
         @param expr, user expression
+        @param true_names, a list of true object names in bboxes. If the list is not None, the caption of bbox will be replaced by the true name
+                           if it is far away from true name.
         @return boxes, the detected bounding boxes
                 top_idx, the index of the most likely boudning box in boxes
                 context_idx, maps from captions index tp bbox indexs.
