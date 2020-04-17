@@ -526,6 +526,7 @@ class MILContextComprehension(ComprehensionExperiment):
         result = ingress_msgs.msg.RelevancyClusteringResult()
         result.selection_orig_idx = selection_orig_idx
         result.softmax_probs = dense_softmax
+        result.meteor_scores = q_similarity_score
         result.all_orig_idx = query_result.orig_idx
 
         if not self._combined_semaphore:

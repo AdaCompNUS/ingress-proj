@@ -27,6 +27,7 @@ PUBLISH_DEBUG_RESULT = False
 # Constants
 VALID_MIN_CLUSTER_SIZE = 500  # points
 VALID_MIN_RELEVANCY_SCORE = 0.05
+VALID_MIN_METEOR_SCORE = 0.1
 NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD = 0.1
 
 
@@ -182,6 +183,12 @@ class Ingress():
         # selection_orig_idx = list(np.take(selection_orig_idx, pruned_selection_orig_idx))
         # self._relevancy_result.selection_orig_idx = selection_orig_idx
         # rospy.loginfo("pruned index {}".format(selection_orig_idx))
+
+        # clean by threshold on meteor score
+        pruned_selection_orig_idx = [idx for idx in selection_orig_idx
+            if self._relevancy_result.meteor_scores[idx] > VALID_MIN_METEOR_SCORE]
+        selection_orig_idx = pruned_selection_orig_idx
+        rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
         if len(selection_orig_idx) == 0:
             rospy.logwarn("Ingress_srv: no object detected")

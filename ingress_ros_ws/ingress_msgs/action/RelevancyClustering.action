@@ -1,12 +1,13 @@
 # NOTE: RelevancyClustering should only be called after DenseRefexpLoad
 #goal definition
 string query
-int32[] incorrect_idxs # indexes 
+int32[] incorrect_idxs # indexes
 ---
 #result definition
 int32[] selection_orig_idx # original idxs of selected context objects
 float32[] softmax_probs # softmaxed query loss values
+float32[] meteor_scores # meteor scores
 int32[] all_orig_idx # original idxs of all context objects
---- 
+---
 #feedback
 
