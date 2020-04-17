@@ -128,8 +128,8 @@ class ComprehensionExperiment:
 
         # unpack result
         fc7_feats = np.reshape(loc_result.fc7_vecs, (-1, 4096))
-        captions = loc_result.captions
-        scores = loc_result.scores
+        captions = list(loc_result.captions)
+        scores = list(loc_result.scores)
 
         # plot localization results
         if visualize:
@@ -181,7 +181,6 @@ class MILContextComprehension(ComprehensionExperiment):
 
         self._object_name_replaced = False
 
-
     def _calc_meteor_score(self, req):
         score = self._meteor.score(req.ref, req.tar)
         return ingress_msgs.srv.MeteorScoreResponse(score)
@@ -198,7 +197,7 @@ class MILContextComprehension(ComprehensionExperiment):
         # unpack result
         q_boxes = np.reshape(query_result.boxes, (-1, 4))
         q_fc7_feats = np.reshape(query_result.fc7_vecs, (-1, 4096))
-        q_captioning_losses = query_result.captioning_losses
+        q_captioning_losses = list(query_result.captioning_losses)
         q_similarity_ranks = query_result.meteor_ranks
         q_orig_idx = query_result.orig_idx
         # q_similarity_score = query_result.meteor_scores
@@ -212,7 +211,7 @@ class MILContextComprehension(ComprehensionExperiment):
         # if name replacement happened. Set some caption loss to 0
         if self._object_name_replaced:
             for idx in self._name_replaced_obj_idx:
-                q_captioning_losses[idx] = 0
+                q_captioning_losses[q_orig_idx.index(idx)] = 1e-10
 
         # softmax for densecap
         softmax_inputs = np.array(q_captioning_losses)
@@ -232,7 +231,7 @@ class MILContextComprehension(ComprehensionExperiment):
         #   print str(dense_softmax[idx])
 
         # debug: print METEOR scores
-        print "\nQuery: %s" % (query)
+        print "\nunpack and prune 2: Query: %s" % (query)
         for c, cap in enumerate(self.o_captions):
             print "loss: %f, softmax: %f, meteor: %f - '%s'" % (
                 q_captioning_losses[c], dense_softmax[c], q_similarity_score[c], self.o_captions[q_orig_idx[c]])
@@ -263,7 +262,9 @@ class MILContextComprehension(ComprehensionExperiment):
         all_top_k = np.array(all_euclidean_error).argsort()[:k]
 
         slice_length = k
+        print("q_captioning_losses {}".format(q_captioning_losses))
         q_captioning_losses = np.take(q_captioning_losses, all_top_k, axis=0)
+        print("q_captioning_losses {}".format(q_captioning_losses))
         q_orig_idx = np.take(q_orig_idx, all_top_k, axis=0)
         q_similarity_score = np.take(q_similarity_score, all_top_k, axis=0)
 
@@ -285,6 +286,7 @@ class MILContextComprehension(ComprehensionExperiment):
         # cap_loss = [1.-float(i) for i in q_captioning_losses]
 
         combined_score = np.vstack((cap_loss, similarity_scores)).T
+        print("combined_score {}".format(combined_score))
         if len(combined_score) <= 0 or np.any(np.isnan(combined_score)) or np.any(np.isinf(combined_score)):
             print "Sample size too small for clustering"
             return None
@@ -421,7 +423,7 @@ class MILContextComprehension(ComprehensionExperiment):
                 # replace the whole caption
                 captions[i] = true_names[i]
                 # change score to 1.0 to indicate that the name is replaced TODO
-                self.o_scores[i] = 1.0
+                self.o_scores[i] = float('inf')
                 name_replaced_obj_idx.append(i)
                 object_name_replaced = True
 
