@@ -179,6 +179,9 @@ class MILContextComprehension(ComprehensionExperiment):
         self._disambiguate = disambiguate
         self._min_cluster_size = min_cluster_size
 
+        self._object_name_replaced = False
+
+
     def _calc_meteor_score(self, req):
         score = self._meteor.score(req.ref, req.tar)
         return ingress_msgs.srv.MeteorScoreResponse(score)
@@ -205,6 +208,11 @@ class MILContextComprehension(ComprehensionExperiment):
             print("unpack and prune 1", query, self.o_captions[q_orig_idx[c_idx]])
         q_similarity_score = [self._meteor.score(
             query, self.o_captions[q_orig_idx[c_idx]]) for c_idx in range(len(self.o_captions))]
+
+        # if name replacement happened. Set some caption loss to 0
+        if self._object_name_replaced:
+            for idx in self._name_replaced_obj_idx:
+                q_captioning_losses[idx] = 0
 
         # softmax for densecap
         softmax_inputs = np.array(q_captioning_losses)
@@ -403,6 +411,8 @@ class MILContextComprehension(ComprehensionExperiment):
             rospy.logerr("_replace_object_names: captions len != true_names len")
             return False
 
+        name_replaced_obj_idx = []
+        object_name_replaced = False
         for i in range(len(true_names)):
             meteor_score = self._meteor.score(captions[i], true_names[i])
             rospy.loginfo("captions: {}, true_names: {}, score {}".format(
@@ -411,7 +421,9 @@ class MILContextComprehension(ComprehensionExperiment):
                 # replace the whole caption
                 captions[i] = true_names[i]
                 # change score to 1.0 to indicate that the name is replaced TODO
-                # self.o_scores[i] = 1.0
+                self.o_scores[i] = 1.0
+                name_replaced_obj_idx.append(i)
+                object_name_replaced = True
 
                 # TODO replace noun only
                 # l = captions[i].split() # split string into list
@@ -419,6 +431,8 @@ class MILContextComprehension(ComprehensionExperiment):
                 # l[noun_idx] = true_names[i]
                 # captions[i] = " ".join(l) # join list into string
 
+        self._name_replaced_obj_idx = name_replaced_obj_idx
+        self._object_name_replaced = object_name_replaced
         return True
 
     def relevancy_clustering(self, goal):
