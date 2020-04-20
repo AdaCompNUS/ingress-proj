@@ -27,6 +27,7 @@ PUBLISH_DEBUG_RESULT = False
 # Constants
 VALID_MIN_CLUSTER_SIZE = 500  # points
 VALID_MIN_RELEVANCY_SCORE = 0.05
+VALID_MIN_METEOR_SCORE = 0.1
 NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD = 0.1
 
 
@@ -158,8 +159,10 @@ class Ingress():
         self._relevancy_client.wait_for_result()
         self._relevancy_result = self._relevancy_client.get_result()
         # selection_orig_idx = self._relevancy_client.get_result().selection_orig_idx
-        selection_orig_idx = self._relevancy_result.selection_orig_idx
+        selection_orig_idx = list(self._relevancy_result.selection_orig_idx)
+        meteor_scores = list(self._relevancy_result.meteor_scores)
         rospy.loginfo("after relevancy clustering: bbox index {}".format(selection_orig_idx))
+        rospy.loginfo("after relevancy clustering: meteor scores {}".format(meteor_scores))
 
         # clean
         # num_points_arr = [list(self._segment_pc(boxes[idx]))[1] for idx in selection_orig_idx]
@@ -182,6 +185,12 @@ class Ingress():
         # selection_orig_idx = list(np.take(selection_orig_idx, pruned_selection_orig_idx))
         # self._relevancy_result.selection_orig_idx = selection_orig_idx
         # rospy.loginfo("pruned index {}".format(selection_orig_idx))
+
+        # clean by threshold on meteor score
+        pruned_selection_orig_idx = [idx for i, idx in enumerate(selection_orig_idx)
+                                     if meteor_scores[i] > VALID_MIN_METEOR_SCORE]
+        selection_orig_idx = pruned_selection_orig_idx
+        rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
         if len(selection_orig_idx) == 0:
             rospy.logwarn("Ingress_srv: no object detected")

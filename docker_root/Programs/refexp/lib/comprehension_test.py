@@ -31,13 +31,14 @@ plt.switch_backend('agg')
 
 # plt.ion()
 
+# ------- Settings ------
 
 DEBUG_PRINT = False
 VISUALIZE = False
 
+# ------- Constant -------
 AMBUGUITY_THRESHOLD = 0.1
 NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD = 0.1
-
 
 class ComprehensionExperiment:
     def __init__(self, language_model, dataset, image_ids=None):
@@ -128,8 +129,8 @@ class ComprehensionExperiment:
 
         # unpack result
         fc7_feats = np.reshape(loc_result.fc7_vecs, (-1, 4096))
-        captions = loc_result.captions
-        scores = loc_result.scores
+        captions = list(loc_result.captions)
+        scores = list(loc_result.scores)
 
         # plot localization results
         if visualize:
@@ -179,6 +180,8 @@ class MILContextComprehension(ComprehensionExperiment):
         self._disambiguate = disambiguate
         self._min_cluster_size = min_cluster_size
 
+        self._object_name_replaced = False
+
     def _calc_meteor_score(self, req):
         score = self._meteor.score(req.ref, req.tar)
         return ingress_msgs.srv.MeteorScoreResponse(score)
@@ -195,7 +198,7 @@ class MILContextComprehension(ComprehensionExperiment):
         # unpack result
         q_boxes = np.reshape(query_result.boxes, (-1, 4))
         q_fc7_feats = np.reshape(query_result.fc7_vecs, (-1, 4096))
-        q_captioning_losses = query_result.captioning_losses
+        q_captioning_losses = list(query_result.captioning_losses)
         q_similarity_ranks = query_result.meteor_ranks
         q_orig_idx = query_result.orig_idx
         # q_similarity_score = query_result.meteor_scores
@@ -205,6 +208,11 @@ class MILContextComprehension(ComprehensionExperiment):
             print("unpack and prune 1", query, self.o_captions[q_orig_idx[c_idx]])
         q_similarity_score = [self._meteor.score(
             query, self.o_captions[q_orig_idx[c_idx]]) for c_idx in range(len(self.o_captions))]
+
+        # if name replacement happened. Set some caption loss to the smallest caption loss value
+        if self._object_name_replaced:
+            for idx in self._name_replaced_obj_idx:
+                q_captioning_losses[q_orig_idx.index(idx)] = min(q_captioning_losses)
 
         # softmax for densecap
         softmax_inputs = np.array(q_captioning_losses)
@@ -224,7 +232,7 @@ class MILContextComprehension(ComprehensionExperiment):
         #   print str(dense_softmax[idx])
 
         # debug: print METEOR scores
-        print "\nQuery: %s" % (query)
+        print "\nunpack and prune 2: Query: %s" % (query)
         for c, cap in enumerate(self.o_captions):
             print "loss: %f, softmax: %f, meteor: %f - '%s'" % (
                 q_captioning_losses[c], dense_softmax[c], q_similarity_score[c], self.o_captions[q_orig_idx[c]])
@@ -246,20 +254,9 @@ class MILContextComprehension(ComprehensionExperiment):
         return q_boxes, q_fc7_feats, q_captioning_losses, q_similarity_ranks, q_orig_idx, q_similarity_score, dense_softmax
 
     def k_means(self, q_captioning_losses, q_similarity_score, q_orig_idx, captions, query, slice_point=10, max_cluster_size=5, norm_meteor=True, rev_loss=True, visualize=False, save_path='./clustering.png'):
-
-        # sort out top k results
-        k = slice_point
-        k = min(k, len(q_captioning_losses))
-        all_combined = np.vstack((q_captioning_losses, q_similarity_score)).T
-        all_euclidean_error = [np.linalg.norm(np.array([1., 1.])-i) for i in all_combined]
-        all_top_k = np.array(all_euclidean_error).argsort()[:k]
-
-        slice_length = k
-        q_captioning_losses = np.take(q_captioning_losses, all_top_k, axis=0)
-        q_orig_idx = np.take(q_orig_idx, all_top_k, axis=0)
-        q_similarity_score = np.take(q_similarity_score, all_top_k, axis=0)
-
-        # clusttering
+        print("q_captioning_losses: {}".format(q_captioning_losses))
+        # clustering
+        # normalize and reverse scores if necessary
         if rev_loss:
             cap_loss = [1.-(float(i)-min(q_captioning_losses))/(max(q_captioning_losses) -
                                                                 min(q_captioning_losses)) for i in q_captioning_losses]
@@ -274,9 +271,31 @@ class MILContextComprehension(ComprehensionExperiment):
         else:
             similarity_scores = [float(i) for i in q_similarity_score]
 
-        # cap_loss = [1.-float(i) for i in q_captioning_losses]
+        # extract top k results
+        k = slice_point
+        k = min(k, len(cap_loss))
+        all_combined = np.vstack((cap_loss, similarity_scores)).T
+        all_euclidean_error = [np.linalg.norm(np.array([1., 1.])-i) for i in all_combined]
+        print("all_euclidean_error {}".format(all_euclidean_error))
+        all_top_k = np.array(all_euclidean_error).argsort()[:k]
+        all_top_k = np.sort(all_top_k)
+        print("all_top_k {}".format(all_top_k))
+        slice_length = k
+        cap_loss = np.take(cap_loss, all_top_k, axis=0)
+        if rev_loss:
+            print("normalized and reversed cap_loss {}".format(cap_loss))
+        else:
+            print("normalized cap_loss {}".format(cap_loss))
+        q_orig_idx = np.take(q_orig_idx, all_top_k, axis=0)
+        similarity_scores = np.take(similarity_scores, all_top_k, axis=0)
+        if norm_meteor:
+            print("normalized similarity_scores {}".format(similarity_scores))
+        else:
+            print("similarity_scores {}".format(similarity_scores))
 
+        # get combined scores for k means relevancy clustering
         combined_score = np.vstack((cap_loss, similarity_scores)).T
+        print("combined_score {}".format(combined_score))
         if len(combined_score) <= 0 or np.any(np.isnan(combined_score)) or np.any(np.isinf(combined_score)):
             print "Sample size too small for clustering"
             return None
@@ -286,13 +305,17 @@ class MILContextComprehension(ComprehensionExperiment):
 
         centroids = kmeans.cluster_centers_
         labels = kmeans.labels_
+        print("labels : {}".format(labels))
 
-        #max_k = max_cluster_size
+        # the cluster closer to point [1.1](the maximum score) is the cluster to be selected.
         max_k = min(max_cluster_size, len(q_captioning_losses))
         min_k = min(self._min_cluster_size, len(q_captioning_losses))
         cluster_euclidean_error = [np.linalg.norm(np.array([1., 1.])-i) for i in combined_score]
+        print("cluster_euclidean_error {}".format(cluster_euclidean_error))
         top_k = np.array(cluster_euclidean_error).argsort()[:max_k]
+        print("top_k {}".format(top_k))
         bottom_k = np.array(cluster_euclidean_error).argsort()[:min_k]
+        print("bottom_k {}".format(bottom_k))
 
         # if greater than max_k choices
         selected_cluster_label = labels[top_k[0]]
@@ -403,6 +426,8 @@ class MILContextComprehension(ComprehensionExperiment):
             rospy.logerr("_replace_object_names: captions len != true_names len")
             return False
 
+        name_replaced_obj_idx = []
+        object_name_replaced = False
         for i in range(len(true_names)):
             meteor_score = self._meteor.score(captions[i], true_names[i])
             rospy.loginfo("captions: {}, true_names: {}, score {}".format(
@@ -411,7 +436,9 @@ class MILContextComprehension(ComprehensionExperiment):
                 # replace the whole caption
                 captions[i] = true_names[i]
                 # change score to 1.0 to indicate that the name is replaced TODO
-                # self.o_scores[i] = 1.0
+                self.o_scores[i] = float('inf')
+                name_replaced_obj_idx.append(i)
+                object_name_replaced = True
 
                 # TODO replace noun only
                 # l = captions[i].split() # split string into list
@@ -419,6 +446,8 @@ class MILContextComprehension(ComprehensionExperiment):
                 # l[noun_idx] = true_names[i]
                 # captions[i] = " ".join(l) # join list into string
 
+        self._name_replaced_obj_idx = name_replaced_obj_idx
+        self._object_name_replaced = object_name_replaced
         return True
 
     def relevancy_clustering(self, goal):
@@ -481,6 +510,8 @@ class MILContextComprehension(ComprehensionExperiment):
                 q_similarity_ranks, q_orig_idx, q_similarity_score, dense_softmax = self.unpack_and_prune(
                     query_result, incorrect_idxs, query)
 
+            print("relevancy_clustering: q_orig_idx: {}".format(q_orig_idx))
+
             boxes = q_boxes
             top_k_fc7_feats = q_fc7_feats
             scores = q_captioning_losses
@@ -509,10 +540,13 @@ class MILContextComprehension(ComprehensionExperiment):
             if selection_idxs is None:
                 continue
 
+            print("selection_idxs: {}".format(selection_idxs))
             is_visually_confident = True if (
                 best_meteor_sim < 0.5 and dense_softmax[0] > 0.8) else False
             print("relevancy_clustering 2", is_visually_confident,
                   best_meteor_sim, dense_softmax[0])
+
+            # print("relevancy_clustering: q_orig_idx: {}".format(q_orig_idx))
 
             if not self._no_confidence_prune and is_visually_confident:
                 selection_orig_idx = [top_5_idxs[0]]
@@ -520,12 +554,19 @@ class MILContextComprehension(ComprehensionExperiment):
                 for idx in selection_idxs:
                     selection_orig_idx.append(q_orig_idx[idx])
 
-        selection_orig_idx = np.unique(selection_orig_idx)
+        # remove duplicate without sorting!!!
+        indexes = np.unique(selection_orig_idx, return_index=True)[1]
+        selection_orig_idx_without_dup = [selection_orig_idx[index] for index in sorted(indexes)]
         #selection_orig_idx = q_orig_idx[:20]
 
+        meteor_scores = [] * len(selection_orig_idx)
+        for idx in selection_idxs:
+            meteor_scores.append(q_similarity_score[idx])
+
         result = ingress_msgs.msg.RelevancyClusteringResult()
-        result.selection_orig_idx = selection_orig_idx
+        result.selection_orig_idx = selection_orig_idx_without_dup
         result.softmax_probs = dense_softmax
+        result.meteor_scores = meteor_scores
         result.all_orig_idx = query_result.orig_idx
 
         if not self._combined_semaphore:
