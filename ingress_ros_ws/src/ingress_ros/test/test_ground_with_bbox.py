@@ -62,6 +62,10 @@ if __name__ == '__main__':
             # without name replacement
             # bboxes, top_idx, context_idxs, captions = ingress_service.ground_img_with_bbox(
             #     img, bboxes, expr)
+            if len(context_idxs) == 0 or captions is None:
+                rospy.loginfo("no object found")
+                continue
+
             sem_captions, sem_probs, rel_captions, rel_probs = captions
             # rospy.loginfo("top index = {}, context_idx = {}".format(top_idx, context_idxs))
             rospy.loginfo("sem_captions: {}".format(sem_captions))
