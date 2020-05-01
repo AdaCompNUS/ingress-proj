@@ -51,6 +51,10 @@ if __name__ == '__main__':
 
                 xml_path = os.path.splitext(img_path)[0] + '.xml'
                 bboxes, bbox_obj_names = get_bboxes_from_xml(xml_path)
+                # bboxes = [[184, 25, 685, 725], [130, 746, 644, 610],
+                #           [201, 10, 573, 498], [274, 782, 803, 655]]
+                # bbox_obj_names = ['box', 'box', 'remote controller', 'cup']
+
             except Exception as e:
                 rospy.logerr(e)
 

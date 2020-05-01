@@ -40,6 +40,7 @@ VISUALIZE = False
 AMBUGUITY_THRESHOLD = 0.1
 NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD = 0.1
 
+
 class ComprehensionExperiment:
     def __init__(self, language_model, dataset, image_ids=None):
         self.lang_model = language_model
@@ -259,15 +260,15 @@ class MILContextComprehension(ComprehensionExperiment):
         # normalize and reverse scores if necessary
         if rev_loss:
             cap_loss = [1.-(float(i)-min(q_captioning_losses))/(max(q_captioning_losses) -
-                                                                min(q_captioning_losses)) for i in q_captioning_losses]
+                                                                min(q_captioning_losses) + 1e-5) for i in q_captioning_losses]  # prevent division by 0
         else:
             cap_loss = [(float(i)-min(q_captioning_losses))/(max(q_captioning_losses) -
-                                                             min(q_captioning_losses)) for i in q_captioning_losses]
+                                                             min(q_captioning_losses) + 1e-5) for i in q_captioning_losses]  # prevent division by 0
             # cap_loss = [float(i) for i in q_captioning_losses]
 
         if norm_meteor:
             similarity_scores = [(float(i)-min(q_similarity_score)) /
-                                 (max(q_similarity_score)-min(q_similarity_score)) for i in q_similarity_score]
+                                 (max(q_similarity_score)-min(q_similarity_score) + + 1e-5) for i in q_similarity_score]
         else:
             similarity_scores = [float(i) for i in q_similarity_score]
 
