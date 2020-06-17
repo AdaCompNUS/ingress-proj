@@ -46,7 +46,10 @@ if __name__ == '__main__':
         while not rospy.is_shutdown():
             try:
                 # get image
-                img_path = raw_input("Enter path to image: ")
+                img_path = raw_input("Enter path to image (Enter q to exit): ")
+                if img_path == 'q':
+                    break
+                
                 img = cv2.imread(img_path, cv2.IMREAD_COLOR)
 
                 xml_path = os.path.splitext(img_path)[0] + '.xml'

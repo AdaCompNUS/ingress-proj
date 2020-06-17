@@ -1,13 +1,5 @@
 #!/bin/bash
 
-## Setup ROS
-# MASTER_URI=http://127.0.0.1:11311
-# IP=127.0.0.1
-
-## Example
-# MASTER_URI=http://192.168.0.32:11311
-# IP=192.168.0.32
-
 # CUDA Setup
 GPU_IDX=0
 
