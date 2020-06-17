@@ -34,27 +34,23 @@ And works in the [acknowledgements](#acknowledgements).
 - Tested on NVIDIA GTX 1080 (needs about 2.5 GB RAM)
 
 ## Installation
-
 The docker image contains: [ROS (kinetic)](http://wiki.ros.org/kinetic), [Torch](http://torch.ch/), [Caffe](http://caffe.berkeleyvision.org/), and Ingress (source code). To run and test Ingress inside the docker image, you don't need to install any dependencies other than nvidia-docker itself.
 
 <!--However, for a server-client setup, you need to clone this repo on both the server & client, and compile the interface on the client side (see below). The client can also be the shell running the docker image.-->   
 
 ### Nvidia Docker 
-
 Follow the instructions to [install NVIDIA docker](https://github.com/NVIDIA/nvidia-docker). You should be able to run this inside docker, if everything is installed properly:
 ```bash
 $ nvidia-smi
 ```
 
-## Quickstart
-
-A quick guide to testing the whole system **inside the docker image.** To integrate ingress with host system, see Robot Setup section below.  
-
-### Start Docker
-
-Clone the repo OR unzip the folder:
+### Download Docker Image
+Clone the repo and build ROS workspace:
 ```bash
-$ git clone https://github.com/AdaCompNUS/ingress.git 
+$ git clone https://github.com/AdaCompNUS/ingress.git
+$ cd ingress/ingress_ros_ws
+$ catkin_make
+$ source devel/setup.bash
 ```
 
 Run the script. The first time you run this command, Docker downloads an 9.2GB image (could take a while!):
@@ -63,33 +59,48 @@ $ cd <ingress_dir>
 $ sh start_ingress.sh
 ```
 
-### Roscore
-
-Start roscore in a tmux shell:
+Inside docker, install lua torch and cuda libraries:
 ```bash
-root@pc:/# tmux new -s roscore
+$ luarocks install cutorch
+$ luarocks install cunn
+$ luarocks install cudnn
+```
+
+## Demo
+In the demo, the ingress docker image is used as a grounding server and the host system acts as a client. 
+
+### Configure Network 
+Go **inside the docker**, edit the `~/ingress_server.sh` script with your network settings:
+```bash
+...
+export ROS_MASTER_URI=http://<roscore_ip_addr>:11311
+export ROS_IP=<ingress_system_ip_addr>
+...
+```
+
+or manually set up the ROS_MASTER_URI
+ ```
+export ROS_MASTER_URI="http://<roscore_ip_addr>:11311"
+export ROS_IP=<ingress_system_ip_addr>
+```
+
+### Run Demo
+Start `roscore` on your **robot or client-pc.** 
+```bash
 root@pc:/# roscore
 ```
 
-Press `Ctrl+b` and `d` to escape the tmux shell.  
-
-### Ingress
-
-Then start the INGRESS server in a tmux shell by running the `ingress` command:
+Then start `ingress` inside the **docker image:**
 ```bash
-root@pc:/# tmux new -s ingress
-root@pc:/# ingress
+$ sh start_ingress.sh
+root@docker-container:/# ingress
 ```
-
 Wait until you see `METEOR initialized`. That means the grounding server is ready. Now you can send images and expressions to the server, and receive grounded bounding boxes and question captions as output.  
 
-### Test
-
-Run the example in another tmux shell:
+Now you can run the example on **robot or client-pc**
 
 ```bash
-root@pc:/# tmux new -s test
-root@pc:/# cd ~/ros_devel_ws/src/ingress/examples/
+root@pc:/# cd <ingress-repo-root>/examples/
 root@pc:/# python interactive_grounding_example.py
 ```
 
@@ -105,66 +116,16 @@ Type "the red cup" into the query. This outputs `grounding_result.png` and print
 ['the red cup in the middle.', 'the red cup on the left.', 'the red cup on the right.']
 ```
 
-To open `grounding_result.png`, on a separate shell:
-
-```bash
-$ docker cp <container_id>:/root/ros_devel_ws/src/ingress/examples/grounding_result.png ./
-```
-
 ### Exit
-
-To shutdown the `ingress` server, use `Ctrl + c` or `Ctrl + \`.
-
-## Robot Setup
-
-To integrate Ingress with real-robots, use the docker image as a grounding server. But first, you need to compile the ROS actionlib interface on your robot or client-pc in order to communicate with the Ingress server (that is running inside the docker image).
-
-### Compile Interface 
-
-On your robot/client-pc, clone the interface repo:
-```bash
-$ cd <your_ros_workspace>/src
-$ git clone --recursive https://github.com/AdaCompNUS/ingress.git
-```
-
-Install actionlib messages:
-```bash
-$ cd <your_ros_workspace>
-$ catkin_make --pkg action_controller
-```
-
-### Network 
-
-Edit the `start_ingress.sh` script with your network settings:
-```bash
-...
-MASTER_URI=http://<roscore_ip_addr>:11311
-IP=<ingress_system_ip_addr>
-...
-```
-
-or go inside your docker and manually set up the ROS_MASTER_URI
- ```
-export ROS_MASTER_URI="http://<roscore_ip_addr>:11311"
-export ROS_IP=localhost
-```
-
-Start `roscore` on your robot or client-pc. Then start `ingress` inside the docker image:
-
-```bash
-$ sh start_ingress.sh
-root@pc:/# ingress
-```
-
-You should now be able to run the Quickstart example outside the docker image on all clients connected to roscore.
+**In docker**, to shutdown the `ingress` server, use `Ctrl + c` or `Ctrl + \`.
 
 ## How to make changes:
 
-### Ros wrapper:
-You can make changes and test ROS wrapper normally
+### Ingress client:
+You can make changes and test ingress ROS client normally
 
-### Ingress:
-The source code for ingress server is stored in docker_root. You can make change there. However, when you want to test the change, you have to copy it into docker. If you make changes to ingress ros interfaces, you have to copy them into docker as well.
+### Ingress server and ROS interface:
+The source code for ingress server is stored in <repo-root>/docker_root. You can make change there. However, when you want to test the change, you have to copy it into docker. If you make changes to ingress ros interfaces (such as ingress_msgs), you have to copy them into docker as well.
 ```bash
 docker cp docker_root/. <container-id>:/root/
 docker cp ingress_ros_ws <container-id>:/root/
@@ -174,11 +135,11 @@ docker cp ingress_ros_ws <container-id>:/root/
 
 ### Disambiguation
 
-By default, the disambiguation is enabled. It can disabled by setting `DISAMBIGUATE=false` in `~/ingress_server.sh` for fast-grounding without disambiguation:
+By default, the disambiguation is enabled. It can disabled by setting `DISAMBIGUATE=false` in `~/ingress_server.sh` for fast-grounding without disambiguation **in docker**:
 
 ```bash
-root@pc:/# sed -i 's/DISAMBIGUATE=true/DISAMBIGUATE=false/g' ~/ingress_server.sh
-root@pc:/# ingress
+root@docker-container:/# sed -i 's/DISAMBIGUATE=true/DISAMBIGUATE=false/g' ~/ingress_server.sh
+root@docker-container:/# ingress
 ```
 
 ## Tips
@@ -195,7 +156,7 @@ root@pc:/# ingress
 
 ## Issues
 
-If Lua complains that certain CUDA functions were not found during execution: remove the clean-up option `--rm` from the `docker` command in `start_ingress.sh`. Run the script and reinstall the rocks:
+If Lua complains that certain CUDA functions were not found during execution, run the script and reinstall the rocks:
 
 ```bash
 $ luarocks install cutorch
