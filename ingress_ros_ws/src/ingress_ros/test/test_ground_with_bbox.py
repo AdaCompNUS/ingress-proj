@@ -54,8 +54,10 @@ if __name__ == '__main__':
 
                 xml_path = os.path.splitext(img_path)[0] + '.xml'
                 bboxes, bbox_obj_names = get_bboxes_from_xml(xml_path)
-                # bboxes = [[184, 25, 685, 725], [130, 746, 644, 610],
-                #           [201, 10, 573, 498], [274, 782, 803, 655]]
+                # bboxes = [[282, 330, 98, 102], [238, 328, 114, 53],
+                #           [98, 260, 96, 99],   [193, 210, 135, 135],
+                #           [417, 244, 75, 196], [200, 238, 231, 36]]
+                # bbox_obj_names = []
                 # bbox_obj_names = ['box', 'box', 'remote controller', 'cup']
 
             except Exception as e:
@@ -64,11 +66,14 @@ if __name__ == '__main__':
             expr = raw_input("Enter user expression: ")
 
             # with name replacement
-            bboxes, top_idx, context_idxs, captions = ingress_service.ground_img_with_bbox(
-                img, bboxes, expr, true_names=bbox_obj_names)
+            if len(bbox_obj_names):
+                bboxes, top_idx, context_idxs, captions = ingress_service.ground_img_with_bbox(
+                    img, bboxes, expr, true_names=bbox_obj_names)
             # without name replacement
-            # bboxes, top_idx, context_idxs, captions = ingress_service.ground_img_with_bbox(
-            #     img, bboxes, expr)
+            else:
+                bboxes, top_idx, context_idxs, captions = ingress_service.ground_img_with_bbox(
+                    img, bboxes, expr)
+
             if len(context_idxs) == 0 or captions is None:
                 rospy.loginfo("no object found")
                 continue

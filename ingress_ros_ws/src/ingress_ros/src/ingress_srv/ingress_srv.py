@@ -186,9 +186,10 @@ class Ingress():
         # self._relevancy_result.selection_orig_idx = selection_orig_idx
         # rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
-        # clean by threshold on meteor score
+        # clean by threshold on meteor score, 
+        # Also the idx must be < len(boxes). This check is necessary because one additional caption is generated for the whole image.
         pruned_selection_orig_idx = [idx for i, idx in enumerate(selection_orig_idx)
-                                     if meteor_scores[i] > VALID_MIN_METEOR_SCORE]
+                                     if meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)] 
         selection_orig_idx = pruned_selection_orig_idx
         rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
@@ -416,6 +417,7 @@ class Ingress():
         # preprocess data
         # convert image to ros image
         img_msg = CvBridge().cv2_to_imgmsg(image, "rgb8")
+        self._img_msg = img_msg
         # convert 2d bbox list to 1d
         bboxes_1d = [i for bbox in bboxes for i in bbox]
         print(bboxes_1d)
