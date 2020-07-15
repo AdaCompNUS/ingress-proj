@@ -212,8 +212,10 @@ class MILContextComprehension(ComprehensionExperiment):
 
         # if name replacement happened. Set some caption loss to the smallest caption loss value
         if self._object_name_replaced:
+            q_replaced_captioning_indexes = [q_orig_idx.index(idx) for idx in self._name_replaced_obj_idx]
+            q_unreplaced_caption_losses = [q_captioning_losses[idx] for idx in range(len(q_captioning_losses)) if idx not in q_replaced_captioning_indexes]
             for idx in self._name_replaced_obj_idx:
-                q_captioning_losses[q_orig_idx.index(idx)] = min(q_captioning_losses)
+                q_captioning_losses[q_orig_idx.index(idx)] = min(q_unreplaced_caption_losses)
 
         # softmax for densecap
         softmax_inputs = np.array(q_captioning_losses)
@@ -744,7 +746,7 @@ class MILContextComprehension(ComprehensionExperiment):
         print "Dis" + str(self._disambiguate)
 
         # and (len(descending_probs) >= 2 and (descending_probs[0]-descending_probs[1] < AMBUGUITY_THRESHOLD)):
-        if self._disambiguate:
+        if self._disambiguate: # and len(descending_probs) >= 2:
             # if False:
             # Second Pass for ambuguity resolve gen
             # ----------------------------------------
@@ -800,9 +802,9 @@ class MILContextComprehension(ComprehensionExperiment):
                 ref_similarity_score = [self._meteor.score(
                     goal.query, cap) for cap in sorted_predictive_captions]
                 ref_orig_idx = range(len(ref_similarity_score))
-                selection_idxs = self.k_means(ref_probs, ref_similarity_score, ref_orig_idx, sorted_predictive_captions, goal.query,
-                                              slice_point=6, max_cluster_size=6,
-                                              rev_loss=False, norm_meteor=False, visualize=VISUALIZE, save_path='/home/mohit/Programs/referring-expressions/lib/tests/clustering/clustering_spat.png')
+                # selection_idxs = self.k_means(ref_probs, ref_similarity_score, ref_orig_idx, sorted_predictive_captions, goal.query,
+                #                               slice_point=6, max_cluster_size=6,
+                #                               rev_loss=False, norm_meteor=False, visualize=VISUALIZE, save_path='/home/mohit/Programs/referring-expressions/lib/tests/clustering/clustering_spat.png')
 
                 for t in range(len(ref_similarity_score)):
                     print sorted_predictive_captions[t], ref_similarity_score[t], ref_orig_idx[t]
