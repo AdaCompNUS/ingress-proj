@@ -1,0 +1,14 @@
+# NOTE: DenseRefexpQuery should only be called after DenseRefexpLoad
+#goal definition
+string query
+float32[] boxes
+int32[] selection_orig_idx
+int32 target_box_idx
+
+---
+#result definition
+string[] predicted_captions # an array of predicted captions
+int32[] context_boxes_idxs # an array of box idx each predicted caption is with respect to
+float32[] probs #  the probability of captions
+--- 
+#feedback

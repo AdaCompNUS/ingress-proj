@@ -13,8 +13,6 @@ import os
 
 import ingress_srv.ingress_srv as ingress_srv
 
-REPLACE_NAME = False
-
 def get_bboxes_from_xml(xml_path):
     xml_tree = ET.parse(xml_path)
     root = xml_tree.getroot()
@@ -55,42 +53,27 @@ if __name__ == '__main__':
 
                 xml_path = os.path.splitext(img_path)[0] + '.xml'
                 bboxes, bbox_obj_names = get_bboxes_from_xml(xml_path)
+
                 # bboxes = [[282, 330, 98, 102], [238, 328, 114, 53],
                 #           [98, 260, 96, 99],   [193, 210, 135, 135],
                 #           [417, 244, 75, 196], [200, 238, 231, 36]]
                 # bbox_obj_names = []
                 # bbox_obj_names = ['box', 'box', 'remote controller', 'cup']
 
+                # img_path = '/home/peacock-rls/work/rls_robot_ws/src/services/planning_services/ingress/examples/images/table.png'
+                # img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+                # bboxes = []
+
             except Exception as e:
                 rospy.logerr(e)
 
-            expr = raw_input("Enter user expression: ")
+            target_idx = raw_input("Enter target bbox ind: ")
+            target_idx = int(target_idx)
 
-            # with name replacement
-            if len(bbox_obj_names):
-                bboxes, top_idx, context_idxs, captions = ingress_service.ground_img_with_bbox(
-                    img, bboxes, expr, true_names=bbox_obj_names)
-            # without name replacement
-            else:
-                bboxes, top_idx, context_idxs, captions = ingress_service.ground_img_with_bbox(
-                    img, bboxes, expr)
+            top_caption, top_context_box_idx = ingress_service.generate_rel_captions_for_box(img, bboxes, target_idx)
 
-            if len(context_idxs) == 0 or captions is None:
-                rospy.loginfo("no object found")
-                continue
-
-            sem_captions, sem_probs, rel_captions, rel_probs = captions
-            # rospy.loginfo("top index = {}, context_idx = {}".format(top_idx, context_idxs))
-            rospy.loginfo("sem_captions: {}".format(sem_captions))
-            rospy.loginfo("sem_probs: {}".format(sem_probs))
-            rospy.loginfo("rel_captions: {}".format(rel_captions))
-            rospy.loginfo("rel_probs: {}".format(rel_probs))
-
-            rospy.loginfo("Top bbox is {}".format(bboxes[top_idx]))
-            rospy.loginfo(
-                "Top bbox self-referential caption: {}".format(sem_captions[context_idxs.index(top_idx)]))
-            rospy.loginfo("Top bbox relational caption: {}".format(
-                sem_captions[context_idxs.index(top_idx)]))
+            print('top_caption: {}'.format(top_caption))
+            print('top_context_box_idx: {}'.format(top_context_box_idx))
 
     except rospy.ROSInterruptException:
         pass
