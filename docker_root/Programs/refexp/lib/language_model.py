@@ -157,6 +157,7 @@ class MILContextLanguageModel(LanguageModel):
     self.set_caption_batch_size(batch_size)
     cont_input = np.zeros_like(net.blobs['timestep_cont'].data)
     word_input = np.zeros_like(net.blobs['timestep_input'].data)
+    print('word_input.shape {}'.format(word_input.shape))
     fc7_obj = np.asarray(fc7_obj)
     bbox_features = np.asarray(bbox_features)
     output_captions = [[] for _ in range(batch_size)]
@@ -180,7 +181,7 @@ class MILContextLanguageModel(LanguageModel):
               caption_index <= len(output_captions[index]) else self.vocab[EOS_IDENTIFIER]
           # if caption_index <= len(output_captions[index]):
           #   word_input[0, index, :] = output_captions[index][caption_index - 1]
-      # print (word_input)
+      # print('word_input: {}'.format(word_input))
       net.forward(timestep_input=word_input, timestep_cont=cont_input,fc7_obj=fc7_obj,bbox_features=bbox_features,
                   context_fc7=context_fc7, context_bbox_features=context_bbox_features)
 
@@ -190,6 +191,9 @@ class MILContextLanguageModel(LanguageModel):
       assert(all_probs.shape[0] == batch_size*context_size)
       net_output_preds = net.blobs[pred_output_name].data[0]
       assert(net_output_preds.shape[0] == fc7_obj.shape[0])
+
+      print('net_output_preds.shape: {}'.format(net_output_preds.shape))
+      print('all_probs.shape: {}'.format(all_probs.shape))
 
       if temp == 1.0 or temp == float('inf'):
         samples = [
@@ -201,13 +205,15 @@ class MILContextLanguageModel(LanguageModel):
             random_choice_from_probs(preds, temp=temp, already_softmaxed=False)
             for preds in net_output_preds
         ]
-      context_preds = net.blobs['r_predict'].data[0][0]
+      context_preds = net.blobs['r_predict'].data[0] # [0]
+      print('context_preds.shape: {}'.format(context_preds.shape))
 
       # for cap in output_captions:
       #   print (self.sentence(cap))
       # print (self.sentence(samples))
       
-      # print (self.sentence(samples))
+      print('samples: {}'.format(samples))
+      print(self.sentence(samples))
       for index, next_word_sample in enumerate(samples):
         # print self.sentence([next_word_sample]), output_captions[index], num_done
         # If the caption is empty, or non-empty but the last word isn't EOS,
@@ -221,7 +227,8 @@ class MILContextLanguageModel(LanguageModel):
           word_ind = output_captions[index][caption_index]
           word_prob = net_output_probs[index, word_ind]
           output_probs[index].append(word_prob)
-          if output_captions[index][-1] == self.vocab[EOS_IDENTIFIER]: num_done += 1
+          if output_captions[index][-1] == self.vocab[EOS_IDENTIFIER]: 
+            num_done += 1
 
           # print ("Num Done: %d" % (num_done))
           
@@ -233,8 +240,100 @@ class MILContextLanguageModel(LanguageModel):
     # print ("output_captions--------------")
     # for idx, cap in enumerate(output_captions):
     #   print (self.sentence(cap))
-    
+
     return output_captions, output_probs, output_all_probs
+
+  def sample_captions_with_context_for_single_bbox(self, fc7_obj, bbox_features, context_fc7, context_bbox_features, prefix_words=[],
+                      prob_output_name='probs',pred_output_name='r_mil_predict', temp=float("inf"), max_length=20):
+    net = self.lstm_net
+    batch_size = fc7_obj.shape[0]
+    assert batch_size == 1 # we are generating captions for single bbox
+    context_size = fc7_obj.shape[1]
+    self.set_caption_batch_size(batch_size)
+    cont_input = np.zeros_like(net.blobs['timestep_cont'].data)
+    word_input = np.zeros_like(net.blobs['timestep_input'].data)
+    print('word_input.shape {}'.format(word_input.shape))
+    fc7_obj = np.asarray(fc7_obj)
+    bbox_features = np.asarray(bbox_features)
+    output_captions = [[] for _ in range(context_size)]
+    output_probs = [[] for _ in range(context_size)]
+    # output_all_probs = [[] for _ in range(batch_size*context_size)]
+    context_inds = [[] for _ in range(batch_size)]
+    caption_index = 0
+    num_done = 0
+
+    while num_done < context_size and caption_index < max_length:
+      if caption_index == 0:
+        cont_input[:] = 0
+      elif caption_index == 1:
+        cont_input[:] = 1
+      if caption_index == 0:
+        word_input[:] = self.vocab[EOS_IDENTIFIER]
+      else:
+        for index in range(context_size):
+          word_input[0, 0, index] = \
+              output_captions[index][caption_index - 1] if \
+              caption_index <= len(output_captions[index]) else self.vocab[EOS_IDENTIFIER]
+          # if caption_index <= len(output_captions[index]):
+          #   word_input[0, index, :] = output_captions[index][caption_index - 1]
+      print('word_input: {}'.format(word_input))
+      net.forward(timestep_input=word_input, timestep_cont=cont_input,fc7_obj=fc7_obj,bbox_features=bbox_features,
+                  context_fc7=context_fc7, context_bbox_features=context_bbox_features)
+
+      net_output_probs = net.blobs[prob_output_name].data[0]
+      assert(net_output_probs.shape[0] == fc7_obj.shape[0])
+      all_probs = net.blobs['all_probs'].data[0]
+      assert(all_probs.shape[0] == batch_size*context_size)
+      net_output_preds = net.blobs[pred_output_name].data[0]
+      assert(net_output_preds.shape[0] == fc7_obj.shape[0])
+
+      print('net_output_preds.shape: {}'.format(net_output_preds.shape))
+      print('all_probs.shape: {}'.format(all_probs.shape))
+
+      if temp == 1.0 or temp == float('inf'):
+        samples = [
+            random_choice_from_probs(dist, temp=temp, already_softmaxed=True)
+            for dist in all_probs
+        ]
+      else:
+        samples = [
+            random_choice_from_probs(preds, temp=temp, already_softmaxed=False)
+            for preds in all_probs
+        ]
+      context_preds = net.blobs['r_predict'].data[0] # [0]
+      print('context_preds.shape: {}'.format(context_preds.shape))
+
+      # for cap in output_captions:
+      #   print (self.sentence(cap))
+      # print (self.sentence(samples))
+      
+      print('samples: {}'.format(samples))
+      print(self.sentence(samples))
+      for index, next_word_sample in enumerate(samples):
+        # print self.sentence([next_word_sample]), output_captions[index], num_done
+        # If the caption is empty, or non-empty but the last word isn't EOS,
+        # predict another word.
+        if not output_captions[index] or output_captions[index][-1] != self.vocab[EOS_IDENTIFIER]:
+          if len(prefix_words) > 0 and caption_index < len(prefix_words[0]):
+            # Copy word from prefix sentence
+            output_captions[index].append(prefix_words[0][caption_index])
+          else:
+            output_captions[index].append(next_word_sample)
+          word_ind = output_captions[index][caption_index]
+          word_prob = all_probs[index, word_ind]
+          output_probs[index].append(word_prob)
+          if output_captions[index][-1] == self.vocab[EOS_IDENTIFIER]: 
+            num_done += 1
+
+          # print ("Num Done: %d" % (num_done))
+ 
+      caption_index += 1
+
+    # print ("output_captions--------------")
+    # for idx, cap in enumerate(output_captions):
+    #   print (self.sentence(cap))
+    
+    return output_captions, output_probs
 
 
 def softmax(softmax_inputs, temp):

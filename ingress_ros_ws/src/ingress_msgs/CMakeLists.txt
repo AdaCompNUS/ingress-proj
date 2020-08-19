@@ -52,6 +52,7 @@ add_action_files(
   DenseRefexpLoadQuery.action
   RelevancyClustering.action
   BoxesRefexpQuery.action
+  BoxRefexpQuery.action
   DenseRefexpLoadBBoxes.action
 )
 
