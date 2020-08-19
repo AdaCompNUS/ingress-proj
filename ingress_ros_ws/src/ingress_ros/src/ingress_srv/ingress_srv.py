@@ -23,6 +23,7 @@ import ingress_msgs.srv
 # Settings
 DEBUG = False
 PUBLISH_DEBUG_RESULT = False
+FILTER_METEOR_SCORE_THRESHOLD = True
 
 # Constants
 VALID_MIN_CLUSTER_SIZE = 500  # points
@@ -38,31 +39,38 @@ def dbg_print(text):
 
 class Ingress():
     def __init__(self):
+        self._rel_captions = []
+
         # wait for grounding load server
         self._load_client = actionlib.SimpleActionClient(
             'dense_refexp_load', ingress_msgs.msg.DenseRefexpLoadAction)
-        rospy.loginfo("DemoManager: 1. Waiting for dense_refexp_load action server ...")
+        rospy.loginfo("Ingress: 1. Waiting for dense_refexp_load action server ...")
         self._self_captions = []
         self._load_client.wait_for_server()
 
         # wait for ground bbox load server
         self._load_bbox_client = actionlib.SimpleActionClient(
             'dense_refexp_load_bboxes', ingress_msgs.msg.DenseRefexpLoadBBoxesAction)
-        rospy.loginfo("1. Waiting for dense_refexp_load_bboxes action server ...")
+        rospy.loginfo("Ingress: 2. Waiting for dense_refexp_load_bboxes action server ...")
         self._load_bbox_client.wait_for_server()
 
         # wait for relevancy clustering server
         self._relevancy_client = actionlib.SimpleActionClient(
             'relevancy_clustering', ingress_msgs.msg.RelevancyClusteringAction)
-        rospy.loginfo("DemoManager: 2. Waiting for relevancy_clustering action server ...")
+        rospy.loginfo("Ingress: 3. Waiting for relevancy_clustering action server ...")
         self._relevancy_client.wait_for_server()
 
         # wait for grounding query server
         self._query_client = actionlib.SimpleActionClient(
             'boxes_refexp_query', ingress_msgs.msg.BoxesRefexpQueryAction)
-        rospy.loginfo("DemoManager: 3. Waiting for boxes_refexp_query action server ...")
-        self._rel_captions = []
+        rospy.loginfo("Ingress: 4. Waiting for boxes_refexp_query action server ...")
         self._query_client.wait_for_server()
+
+        # wait for box refexp query
+        self._box_refexp_query_client = actionlib.SimpleActionClient(
+            'box_refexp_query', ingress_msgs.msg.BoxRefexpQueryAction)
+        rospy.loginfo("Ingress: 5. Waiting for box_refexp_query action server ...")
+        self._box_refexp_query_client.wait_for_server()
 
         # meteor score client:
         self._meteor_score_client = rospy.ServiceProxy(
@@ -188,10 +196,11 @@ class Ingress():
 
         # clean by threshold on meteor score, 
         # Also the idx must be < len(boxes). This check is necessary because one additional caption is generated for the whole image.
-        pruned_selection_orig_idx = [idx for i, idx in enumerate(selection_orig_idx)
-                                     if meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)] 
-        selection_orig_idx = pruned_selection_orig_idx
-        rospy.loginfo("pruned index {}".format(selection_orig_idx))
+        if FILTER_METEOR_SCORE_THRESHOLD:
+            pruned_selection_orig_idx = [idx for i, idx in enumerate(selection_orig_idx)
+                                        if meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)] 
+            selection_orig_idx = pruned_selection_orig_idx
+            rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
         if len(selection_orig_idx) == 0:
             rospy.logwarn("Ingress_srv: no object detected")
@@ -215,7 +224,7 @@ class Ingress():
 
         # preprocess captions
         captions = self._process_captions(
-            self._relevancy_result, query_result, context_boxes_idxs, query)
+            self._relevancy_result, query_result, context_boxes_idxs, expr)
 
         return top_idx, context_boxes_idxs, captions
 
@@ -307,57 +316,6 @@ class Ingress():
         result_img = CvBridge().cv2_to_imgmsg(draw_img, encoding='bgr8')
         self._grounding_result_pub.publish(result_img)
         rospy.loginfo("grounding result published")
-
-    """
-    def _replace_object_names(self, captions, true_names):
-        '''
-        Replace object name in captions if it is not close to the true object name
-        '''
-
-        # input validity check:
-        if len(captions) != len(true_names) + 1:
-            # captions include a caption for the whole image, therefore, the length is 1 more than len(true_names)
-            rospy.logerr("_replace_object_names: captions len != true_names len")
-            return False
-
-        for i in range(len(true_names)):
-            meteor_score = self._get_meteor_score(captions[i], true_names[i])
-            rospy.loginfo("captions: {}, true_names: {}, score {}".format(
-                captions[i], true_names[i], meteor_score))
-            if meteor_score < NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD:
-                # replace the whole caption
-                captions[i] = true_names[i]
-                # change score to 1.0 to indicate that the name is replaced
-                self._ungrounded_caption_scores[i] = 1.0
-
-                # TODO replace noun only
-                # l = captions[i].split() # split string into list
-                # noun_idx = self._get_noun_idx(l)
-                # l[noun_idx] = true_names[i]
-                # captions[i] = " ".join(l) # join list into string
-
-        return True
-
-    def _get_meteor_score(self, text1, text2):
-        resp = self._meteor_score_client(text1, text2)
-        return resp.score
-
-
-    def _get_noun_idx(self, str_list):
-        # Hardcode to find noun
-        # between 'a', 'the' / 'colour' and 'on', 'in'
-        res_idx = -1
-        for i in reversed(range(len(str_list))):
-            if str_list[i] in COLOUR_LIST or str_list[i] in PREFIX_LIST:
-                res_idx = i + 1
-                break
-
-            if str_list[i] in PREPOSITION_LIST:
-                res_idx = i - 1
-
-
-        return
-    """
 
     def ground(self, image, expr):
         '''
@@ -458,6 +416,59 @@ class Ingress():
         self._publish_grounding_result(bboxes, context_idxs)  # visualization of RViz
         return bboxes, top_idx, context_idxs, captions
 
+    def generate_rel_captions_for_box(self, img_cv, bboxes, target_idx):
+        print(img_cv.shape)
+        # preprocess data
+        # convert image to ros image
+        img_msg = CvBridge().cv2_to_imgmsg(img_cv, "rgb8")
+        self._img_msg = img_msg
+
+        if len(bboxes) > 0:
+            # add background to bbox
+            bboxes.append([0, 0, img_cv.shape[1], img_cv.shape[0]])
+
+            # convert 2d bbox list to 1d
+            bboxes_1d = [i for bbox in bboxes for i in bbox]
+            print(bboxes_1d)
+
+        # load image, extract and store feature vectors for each bounding box
+        # goal = ingress_msgs.msg.DenseRefexpLoadBBoxesGoal()
+        # goal.input = img_msg
+        # goal.boxes = bboxes_1d
+        # self._load_bbox_client.send_goal(goal)
+        # self._load_bbox_client.wait_for_result()
+        # load_result = self._load_bbox_client.get_result()
+        # rospy.loginfo("ground_img_with_bbox, result received")
+        # rospy.loginfo("bbox captions: {}".format(load_result.captions))
+        # rospy.loginfo("bbox caption scores: {}".format(load_result.scores))
+        boxes, losses = self._ground_load(img_msg)
+        if len(bboxes) == 0:
+            # add background to bbox
+            boxes = boxes.tolist()
+            boxes.append([0, 0, img_cv.shape[1], img_cv.shape[0]])
+
+            # convert 2d bbox list to 1d
+            bboxes_1d = [i for bbox in boxes for i in bbox]
+            print(bboxes_1d)
+
+        # now ask ingress to generate rel captions
+        query_goal = ingress_msgs.msg.BoxRefexpQueryGoal()
+        query_goal.query = ''
+        query_goal.boxes = bboxes_1d
+        query_goal.selection_orig_idx = [i for i in range(len(bboxes))]
+        query_goal.target_box_idx = target_idx
+        self._box_refexp_query_client.send_goal(query_goal)
+        self._box_refexp_query_client.wait_for_result()
+        query_result = self._box_refexp_query_client.get_result()
+        predicted_captions = query_result.predicted_captions
+        context_boxes_idxs = query_result.context_boxes_idxs
+        pred_caption_probs = query_result.probs
+
+        top_idx = np.argmax(pred_caption_probs)
+        top_caption = predicted_captions[top_idx]
+        top_context_box_idx = context_boxes_idxs[top_idx]
+
+        return top_caption, top_context_box_idx
 
 if __name__ == '__main__':
     rospy.init_node('ingress_ros')
@@ -467,3 +478,56 @@ if __name__ == '__main__':
         rospy.spin()
     except rospy.ROSInterruptException:
         rospy.logerr("ingress exit!!")
+
+# ------ Legacy -------------
+
+    """
+    def _replace_object_names(self, captions, true_names):
+        '''
+        Replace object name in captions if it is not close to the true object name
+        '''
+
+        # input validity check:
+        if len(captions) != len(true_names) + 1:
+            # captions include a caption for the whole image, therefore, the length is 1 more than len(true_names)
+            rospy.logerr("_replace_object_names: captions len != true_names len")
+            return False
+
+        for i in range(len(true_names)):
+            meteor_score = self._get_meteor_score(captions[i], true_names[i])
+            rospy.loginfo("captions: {}, true_names: {}, score {}".format(
+                captions[i], true_names[i], meteor_score))
+            if meteor_score < NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD:
+                # replace the whole caption
+                captions[i] = true_names[i]
+                # change score to 1.0 to indicate that the name is replaced
+                self._ungrounded_caption_scores[i] = 1.0
+
+                # TODO replace noun only
+                # l = captions[i].split() # split string into list
+                # noun_idx = self._get_noun_idx(l)
+                # l[noun_idx] = true_names[i]
+                # captions[i] = " ".join(l) # join list into string
+
+        return True
+
+    def _get_meteor_score(self, text1, text2):
+        resp = self._meteor_score_client(text1, text2)
+        return resp.score
+
+
+    def _get_noun_idx(self, str_list):
+        # Hardcode to find noun
+        # between 'a', 'the' / 'colour' and 'on', 'in'
+        res_idx = -1
+        for i in reversed(range(len(str_list))):
+            if str_list[i] in COLOUR_LIST or str_list[i] in PREFIX_LIST:
+                res_idx = i + 1
+                break
+
+            if str_list[i] in PREPOSITION_LIST:
+                res_idx = i - 1
+
+
+        return
+    """

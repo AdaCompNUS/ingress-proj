@@ -163,6 +163,8 @@ class MILContextComprehension(ComprehensionExperiment):
             'relevancy_clustering', ingress_msgs.msg.RelevancyClusteringAction, execute_cb=self.relevancy_clustering, auto_start=False)
         self._boxes_refexp_query_service = actionlib.SimpleActionServer(
             'boxes_refexp_query', ingress_msgs.msg.BoxesRefexpQueryAction, execute_cb=self.boxes_refexp_query, auto_start=False)
+        self._box_refexp_query_service = actionlib.SimpleActionServer(
+            'box_refexp_query', ingress_msgs.msg.BoxRefexpQueryAction, execute_cb=self.box_refexp_query, auto_start=False)
 
         self._meteor_service = rospy.Service(
             'meteor_score', ingress_msgs.srv.MeteorScore, self._calc_meteor_score)
@@ -170,9 +172,9 @@ class MILContextComprehension(ComprehensionExperiment):
         self._load_service.start()
         self._load_bboxes_service.start()
         self._query_service.start()
-
         self._relevancy_clustering_service.start()
         self._boxes_refexp_query_service.start()
+        self._box_refexp_query_service.start()
 
         self._combined_semaphore = False
         self._meteor = Meteor()
@@ -577,6 +579,130 @@ class MILContextComprehension(ComprehensionExperiment):
 
         return result
 
+    def box_refexp_query(self, goal):
+        query = goal.query
+        boxes = np.reshape(goal.boxes, (-1, 4))
+        selection_orig_idx = goal.selection_orig_idx
+        top_k_fc7_feats = np.take(self.o_fc7_feats, selection_orig_idx, axis=0)
+        scores = np.take(self.o_scores, selection_orig_idx, axis=0)
+        orig_idxs = selection_orig_idx
+        target_box_idx = goal.target_box_idx
+        batch_size = 1 # because we query for single box
+
+        fc7_img = self.o_fc7_whole
+        image_feature_length = len(fc7_img[0])
+        min_x = np.min(boxes[:, 0])
+        min_y = np.min(boxes[:, 1])
+        new_w = np.max(boxes[:, 0] + boxes[:, 2]) - min_x
+        new_h = np.max(boxes[:, 1] + boxes[:, 3]) - min_y
+
+        # Any change to context_length value will also require a change in the deploy prototxt
+        context_length = 10
+        fc7_obj = np.zeros((batch_size, context_length, image_feature_length))
+        context_fc7 = np.tile(fc7_img, (batch_size, context_length, 1))
+        bbox_features = np.zeros((batch_size, context_length, 5))
+        context_bbox_features = np.zeros((batch_size, context_length, 5), np.float16)
+        context_boxes = np.zeros((batch_size, context_length, 4))
+
+        target_box = boxes[target_box_idx]
+        delta_x = float(target_box[0] - min_x)
+        delta_y = float(target_box[1] - min_y)
+        delta_w = float(target_box[2])
+        delta_h = float(target_box[3])
+
+        # Object region features
+        fc7_obj[0, :] = top_k_fc7_feats[0][:]
+
+        # Bounding box features
+        # bbox_area_ratio = (bbox[2]*bbox[3])/(img_wd*img_ht)
+        # bbox_x1y1x2y2 = [bbox[0]/img_wd, bbox[1]/img_ht,
+        #                  min(1., (bbox[0]+bbox[2])/img_wd), min(1., (bbox[1]+bbox[3])/img_ht)]
+        # obj_bbox_features = bbox_x1y1x2y2 + [bbox_area_ratio]
+        # bbox_features[bbox_idx,:] = obj_bbox_features
+        # context_bbox_features[bbox_idx,:] = [0,0,1,1,1]
+
+        bbox_area_ratio = (delta_w*delta_h)/(new_w*new_h)
+        bbox_x1y1x2y2 = [delta_x/new_w, delta_y/new_h,
+                            min(1., (delta_x+delta_w)/new_w), min(1., (delta_y+delta_h)/new_h)]
+        obj_bbox_features = bbox_x1y1x2y2 + [bbox_area_ratio]
+        bbox_features[0, :] = obj_bbox_features
+        context_bbox_features[0, :] = [0, 0, 1, 1, 1]
+
+        # Context features
+        other_bboxes = list(boxes)  # make a copy
+
+        for (other_bbox_idx, other_bbox) in enumerate(other_bboxes):
+            if other_bbox_idx == target_box_idx:
+                continue
+            if other_bbox_idx >= context_length:
+                # maximum context_length contexts
+                break
+
+            # other_bbox_area_ratio = (other_bbox[2] * other_bbox[3]) / (img_wd * img_ht)
+            # other_bbox_x1y1x2y2 = [other_bbox[0] / img_wd, other_bbox[1] / img_ht,
+            #                        (other_bbox[0] + other_bbox[2]) / img_wd, (other_bbox[1] + other_bbox[3]) / img_ht]
+            # other_bbox_features = other_bbox_x1y1x2y2 + [other_bbox_area_ratio]
+            # feats = top_k_fc7_feats[other_bbox_idx]
+            # context_fc7[bbox_idx,other_bbox_idx,:] = feats
+            # context_bbox_features[bbox_idx,other_bbox_idx,:] = other_bbox_features
+
+            # context_boxes[bbox_idx,other_bbox_idx,:] = other_bbox
+
+            delta_x = float(other_bbox[0] - min_x)
+            delta_y = float(other_bbox[1] - min_y)
+            delta_w = float(other_bbox[2])
+            delta_h = float(other_bbox[3])
+
+            other_bbox_area_ratio = (delta_w * delta_h) / (new_w * new_h)
+            other_bbox_x1y1x2y2 = [delta_x / new_w, delta_y / new_h,
+                                    (delta_x + delta_w) / new_w, (delta_y + delta_h) / new_h]
+            other_bbox_features = other_bbox_x1y1x2y2 + [other_bbox_area_ratio]
+            feats = top_k_fc7_feats[other_bbox_idx]
+            context_fc7[0, other_bbox_idx, :] = feats
+            context_bbox_features[0, other_bbox_idx, :] = other_bbox_features
+
+            context_boxes[0, other_bbox_idx, :] = other_bbox
+
+        print('context_bbox_features: {}'.format(context_bbox_features))
+
+        query = 'is'
+        prefix_words_unfiltered = get_encoded_line(query, self.lang_model.vocab)
+        prefix_words = []
+        for word in prefix_words_unfiltered:
+            if word != self.lang_model.vocab[UNK_IDENTIFIER]:
+                prefix_words.append(word)
+        prefix_words = [prefix_words] * batch_size
+
+        # call language model to generate captions
+        output_captions, output_probs = self.lang_model.sample_captions_with_context_for_single_bbox(fc7_obj, bbox_features,
+                                                                                                     context_fc7, context_bbox_features,
+                                                                                                     prefix_words=prefix_words)
+        print('output_captions: {}'.format(output_captions))
+        print('output_probs: {}'.format(output_probs))
+        num_context_objs = min(context_length-1, len(boxes)-1)
+        output_probs = output_probs[:num_context_objs + 1]
+        all_stats = [gen_stats(output_prob) for output_prob in output_probs]
+        all_stats_p_word = np.array([stat['p_word'] for stat in all_stats])
+
+        pred_captions = [self.lang_model.sentence(cap).lower().replace('is', '') for cap in output_captions]
+        # set caption wrt to target_box itself to empty
+        pred_captions[target_box_idx] = ''
+        all_stats_p_word[target_box_idx] = 0
+
+        top_idx = np.argmax(all_stats_p_word)
+        print('pred_captions: {}'.format(pred_captions))
+        print('pred_caption_probs: {}'.format(all_stats_p_word))
+        print('top_pred_caption: {}'.format(pred_captions[top_idx]))
+
+        result = ingress_msgs.msg.BoxRefexpQueryResult()
+        result.predicted_captions = pred_captions
+        result.context_boxes_idxs = [i for i in range(boxes.shape[0])]
+        result.probs = all_stats_p_word
+
+        self._box_refexp_query_service.set_succeeded(result)
+
+        return result
+
     def boxes_refexp_query(self, goal):
         eval_methods = ['noisy_or']
 
@@ -689,6 +815,9 @@ class MILContextComprehension(ComprehensionExperiment):
         # Intial Pass
         # ------------------------------------------------
 
+        print('initial_pass!!!')
+        print('context_bbox_features.shape: {}'.format(context_bbox_features.shape))
+
         prefix_words_unfiltered = get_encoded_line(query, self.lang_model.vocab)
 
         prefix_words = []
@@ -696,13 +825,16 @@ class MILContextComprehension(ComprehensionExperiment):
             if word != self.lang_model.vocab[UNK_IDENTIFIER]:
                 prefix_words.append(word)
         prefix_words = [prefix_words] * batch_size
+        print('prefix_words: {}'.format(prefix_words))
         output_captions, output_probs, \
             output_all_probs = self.lang_model.sample_captions_with_context(fc7_obj, bbox_features,
                                                                             context_fc7, context_bbox_features,
-                                                                            prefix_words=prefix_words)
+                                                                            # prefix_words=prefix_words)
+                                                                            prefix_words=[])
+        print('output_all_probs.shape: {} {}'.format(len(output_all_probs), len(output_all_probs[0])))
         all_stats = [gen_stats(output_prob) for output_prob in output_all_probs]
         all_stats_p_word = [stat['p_word'] for stat in all_stats]
-        all_stats_p_word = np.reshape(all_stats_p_word, (batch_size, context_length))
+        all_stats_p_word = np.reshape(all_stats_p_word, (batch_size, context_length)) # 
 
         for method in eval_methods:
             if method == 'noisy_or':
@@ -717,7 +849,9 @@ class MILContextComprehension(ComprehensionExperiment):
             else:
                 raise StandardError("Unknown eval method %s" % method)
 
+            print('stats: {}',format(stats))
             (sort_keys, sorted_stats) = zip(*sorted(enumerate(stats), key=lambda x: -x[1]))
+            print('sort_keys: {}'.format(sort_keys))
             top_k = 10 if len(sort_keys) > 10 else len(sort_keys)
             top_bboxes = [boxes[k] for k in sort_keys[:top_k]]
             ref_probs_list = [stats[k] for k in sort_keys[:top_k]]
@@ -732,10 +866,13 @@ class MILContextComprehension(ComprehensionExperiment):
         probs.sort()
         descending_probs = probs[::-1]
 
+        print('output_captions: {}'.format(output_captions))
+        initial_pass_pred_captions = [self.lang_model.sentence(cap).lower().replace(' is', '') for cap in output_captions]
+        print(initial_pass_pred_captions)
+
         # This is an abomination. Why you do this??????????????????!!!!!!!!!!!!!!!
 
-        print ("Descending Probs")
-        print (descending_probs)
+        print ("Descending Probs : {}".format(descending_probs))
 
         ref_probs = ref_probs_list
 
@@ -751,9 +888,10 @@ class MILContextComprehension(ComprehensionExperiment):
             # Second Pass for ambuguity resolve gen
             # ----------------------------------------
 
+            # Edit query to trigger more comprehensive caption generation.
             # eos_idx = query.index(" <EOS>")
             # query = query[:eos_idx] + " that is" + query[eos_idx:]
-            query += " is "
+            query += " is " # !!!!! WOW this hack is brilliant !!!!!
             # query += " in the "
             prefix_words_unfiltered = get_encoded_line(query, self.lang_model.vocab)
 
@@ -793,6 +931,8 @@ class MILContextComprehension(ComprehensionExperiment):
 
                 predictive_captions = [self.lang_model.sentence(
                     cap).lower().replace(' is', '') for cap in output_captions]
+                print(predictive_captions)
+                print(output_probs)
                 sorted_predictive_captions = [predictive_captions[k] for k in sort_keys[:top_k]]
 
                 # ref_probs = np.array(stats)
@@ -1453,7 +1593,6 @@ class MILContextComprehension(ComprehensionExperiment):
                 plt.close()
 
         return None
-
 
 def run_comprehension_experiment(dataset, experiment_paths, experiment_config, image_ids=None, no_confidence_prune=False, disambiguate=False, min_cluster_size=1):
     if experiment_config.exp_name == 'baseline' or experiment_config.exp_name.startswith('max_margin'):
