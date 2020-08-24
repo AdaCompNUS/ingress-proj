@@ -465,7 +465,7 @@ class Ingress():
         pred_caption_probs = query_result.probs
 
         top_idx = np.argmax(pred_caption_probs)
-        top_caption = predicted_captions[top_idx]
+        top_caption = predicted_captions[top_idx].lstrip(' ')
         top_context_box_idx = context_boxes_idxs[top_idx]
 
         return top_caption, top_context_box_idx
