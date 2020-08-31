@@ -194,11 +194,11 @@ class Ingress():
         # self._relevancy_result.selection_orig_idx = selection_orig_idx
         # rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
-        # clean by threshold on meteor score, 
+        # clean by threshold on meteor score,
         # Also the idx must be < len(boxes). This check is necessary because one additional caption is generated for the whole image.
         if FILTER_METEOR_SCORE_THRESHOLD:
             pruned_selection_orig_idx = [idx for i, idx in enumerate(selection_orig_idx)
-                                        if meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)] 
+                                        if meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)]
             selection_orig_idx = pruned_selection_orig_idx
             rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
@@ -317,10 +317,10 @@ class Ingress():
         self._grounding_result_pub.publish(result_img)
         rospy.loginfo("grounding result published")
 
-    def ground(self, image, expr):
+    def ground(self, image, expr, img_type='cv2'):
         '''
         run the full grounding pipeline
-        @param image, cv2 img
+        @param image, cv2 img or ros img_msg, depending on img_type
         @param expr, string, user input to describe the target object
         @return boxes, the detected bounding boxes
                 top_idx, the index of the most likely boudning box in boxes
@@ -335,7 +335,11 @@ class Ingress():
             rospy.logerr("DemoMovo/ground: image is none, skip")
             return None
 
-        self._img_msg = CvBridge().cv2_to_imgmsg(image, "rgb8")
+        if img_type == 'ros':
+            self._img_msg = image
+        else:
+            self._img_msg = CvBridge().cv2_to_imgmsg(image, "rgb8")
+
         bboxes, losses = self._ground_load(image)
 
         # if user exprssion is empty, just generate captions for image
