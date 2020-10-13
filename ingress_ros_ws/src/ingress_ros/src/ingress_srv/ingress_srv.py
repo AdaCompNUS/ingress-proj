@@ -436,24 +436,24 @@ class Ingress():
             print(bboxes_1d)
 
         # load image, extract and store feature vectors for each bounding box
-        # goal = ingress_msgs.msg.DenseRefexpLoadBBoxesGoal()
-        # goal.input = img_msg
-        # goal.boxes = bboxes_1d
-        # self._load_bbox_client.send_goal(goal)
-        # self._load_bbox_client.wait_for_result()
-        # load_result = self._load_bbox_client.get_result()
-        # rospy.loginfo("ground_img_with_bbox, result received")
-        # rospy.loginfo("bbox captions: {}".format(load_result.captions))
-        # rospy.loginfo("bbox caption scores: {}".format(load_result.scores))
-        boxes, losses = self._ground_load(img_msg)
-        if len(bboxes) == 0:
-            # add background to bbox
-            boxes = boxes.tolist()
-            boxes.append([0, 0, img_cv.shape[1], img_cv.shape[0]])
+        goal = ingress_msgs.msg.DenseRefexpLoadBBoxesGoal()
+        goal.input = img_msg
+        goal.boxes = bboxes_1d
+        self._load_bbox_client.send_goal(goal)
+        self._load_bbox_client.wait_for_result()
+        load_result = self._load_bbox_client.get_result()
+        rospy.loginfo("ground_img_with_bbox, result received")
+        rospy.loginfo("bbox captions: {}".format(load_result.captions))
+        rospy.loginfo("bbox caption scores: {}".format(load_result.scores))
+        # boxes, losses = self._ground_load(img_msg)
+        # if len(bboxes) == 0:
+        #     # add background to bbox
+        #     boxes = boxes.tolist()
+        #     boxes.append([0, 0, img_cv.shape[1], img_cv.shape[0]])
 
-            # convert 2d bbox list to 1d
-            bboxes_1d = [i for bbox in boxes for i in bbox]
-            print(bboxes_1d)
+        #     # convert 2d bbox list to 1d
+        #     bboxes_1d = [i for bbox in boxes for i in bbox]
+        #     print(bboxes_1d)
 
         # now ask ingress to generate rel captions
         query_goal = ingress_msgs.msg.BoxRefexpQueryGoal()
@@ -467,6 +467,10 @@ class Ingress():
         predicted_captions = query_result.predicted_captions
         context_boxes_idxs = query_result.context_boxes_idxs
         pred_caption_probs = query_result.probs
+
+        if len(pred_caption_probs) == 0:
+            print("ERROR: pred_caption is empty!!!")
+            return None, None
 
         top_idx = np.argmax(pred_caption_probs)
         top_caption = predicted_captions[top_idx].lstrip(' ')
