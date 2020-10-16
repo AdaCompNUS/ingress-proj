@@ -195,12 +195,15 @@ class Ingress():
         # rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
         # clean by threshold on meteor score,
-        # Also the idx must be < len(boxes). This check is necessary because one additional caption is generated for the whole image.
         if FILTER_METEOR_SCORE_THRESHOLD:
             pruned_selection_orig_idx = [idx for i, idx in enumerate(selection_orig_idx)
                                         if meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)]
             selection_orig_idx = pruned_selection_orig_idx
             rospy.loginfo("pruned index {}".format(selection_orig_idx))
+
+        # Also the idx must be < len(boxes). This check is necessary because one additional caption is generated for the whole image.
+        pruned_selection_orig_idx = [idx for idx in selection_orig_idx if idx < len(boxes)]
+        selection_orig_idx = pruned_selection_orig_idx
 
         if len(selection_orig_idx) == 0:
             rospy.logwarn("Ingress_srv: no object detected")
