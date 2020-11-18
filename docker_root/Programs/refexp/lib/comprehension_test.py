@@ -929,18 +929,15 @@ class MILContextComprehension(ComprehensionExperiment):
                 top_k = 10 if len(sort_keys) > 10 else len(sort_keys)
                 top_bboxes = [boxes[k] for k in sort_keys[:top_k]]
 
-                predictive_captions = [self.lang_model.sentence(
-                    cap).lower().replace(' is', '') for cap in output_captions]
+                predictive_captions = [self.lang_model.sentence(cap).lower().replace(' is', '') for cap in output_captions]
                 print(predictive_captions)
                 print(output_probs)
                 sorted_predictive_captions = [predictive_captions[k] for k in sort_keys[:top_k]]
 
-                # ref_probs = np.array(stats)
-                ref_probs_list = [orig_probs[k] for k in sort_keys[:top_k]]
-
-                ref_probs = np.array(ref_probs_list)
-                ref_similarity_score = [self._meteor.score(
-                    goal.query, cap) for cap in sorted_predictive_captions]
+                ref_probs = np.array(sorted_stats)
+                # ref_probs_list = [orig_probs[k] for k in sort_keys[:top_k]]
+                # ref_probs = np.array(ref_probs_list)
+                ref_similarity_score = [self._meteor.score(goal.query, cap) for cap in sorted_predictive_captions]
                 ref_orig_idx = range(len(ref_similarity_score))
                 # selection_idxs = self.k_means(ref_probs, ref_similarity_score, ref_orig_idx, sorted_predictive_captions, goal.query,
                 #                               slice_point=6, max_cluster_size=6,
@@ -959,6 +956,7 @@ class MILContextComprehension(ComprehensionExperiment):
 
             print "AMBIGUOUS EXPRESSION -----------------"
             print (sorted_predictive_captions)
+            print (ref_probs)
 
         # -----------------------------------------------------------------
 
