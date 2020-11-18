@@ -15,6 +15,7 @@ import tf
 import math
 from argparse import ArgumentParser
 from datetime import datetime
+from sklearn.cluster import KMeans
 
 import ingress_msgs.msg
 import ingress_msgs.srv
@@ -24,11 +25,12 @@ import ingress_msgs.srv
 DEBUG = False
 PUBLISH_DEBUG_RESULT = False
 FILTER_METEOR_SCORE_THRESHOLD = True
+ENABLE_SEMANTIC_K_MEANS = False
 
 # Constants
 VALID_MIN_CLUSTER_SIZE = 500  # points
 VALID_MIN_RELEVANCY_SCORE = 0.05
-VALID_MIN_METEOR_SCORE = 0.1
+VALID_MIN_METEOR_SCORE = 0.08
 NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD = 0.1
 
 
@@ -82,6 +84,73 @@ class Ingress():
 
         # demo ready!
         rospy.loginfo("Ingress ready!")
+
+    def _rel_cluster(self, relational_softmax):
+        relational_softmax = np.array(relational_softmax)
+        combined_score = relational_softmax.reshape(-1, 1)
+        if len(combined_score) <= 1 or np.any(np.isnan(combined_score)) or np.any(np.isinf(combined_score)):
+            print "Sample size too small for clustering"
+            return np.array([0])
+
+        # add a manual low probability score
+        combined_score = np.concatenate((combined_score, np.array([[0.01]])), axis=0)
+        print("combined_score {}".format(combined_score))
+        kmeans = KMeans(n_clusters=2)
+        kmeans.fit(combined_score)
+
+        centroids = kmeans.cluster_centers_
+        labels = kmeans.labels_
+        print("labels : {}".format(labels))
+
+        # the cluster closer to point [1.1](the maximum score) is the cluster to be selected.
+        cluster_euclidean_error = [np.linalg.norm(np.array([1., 1.])-i) for i in combined_score]
+        print("cluster_euclidean_error {}".format(cluster_euclidean_error))
+        top_k = np.array(cluster_euclidean_error).argsort()
+        print("top_k {}".format(top_k))
+        top = top_k[0]
+        top_label = labels[top]
+        print("label for good cluster is {}".format(top_label))
+
+        sorted_boxes = top_k
+        top_cluster_size = len(np.flatnonzero(labels == top_label))
+        print("top_cluster_size {}".format(top_cluster_size))
+        selected_boxes = sorted_boxes[:top_cluster_size]
+        print("selected_boxes {}".format(selected_boxes))
+        return selected_boxes
+
+    def _sem_cluster(self, semantic_softmax, meteor_scores):
+        semantic_softmax = np.array(semantic_softmax)
+        meteor_scores = np.array(meteor_scores)
+        combined_score = np.vstack((semantic_softmax, meteor_scores)).T
+        if len(combined_score) <= 1 or np.any(np.isnan(combined_score)) or np.any(np.isinf(combined_score)):
+            print "Sample size too small for clustering"
+            return np.array([0])
+
+        # add a manual low probability score
+        combined_score = np.concatenate((combined_score, np.array([[0.01, 0.00]])), axis=0)
+        print("combined_score {}".format(combined_score))
+        kmeans = KMeans(n_clusters=2)
+        kmeans.fit(combined_score)
+
+        centroids = kmeans.cluster_centers_
+        labels = kmeans.labels_
+        print("labels : {}".format(labels))
+
+        # the cluster closer to point [1.1](the maximum score) is the cluster to be selected.
+        cluster_euclidean_error = [np.linalg.norm(np.array([1., 1.])-i) for i in combined_score]
+        print("cluster_euclidean_error {}".format(cluster_euclidean_error))
+        top_k = np.array(cluster_euclidean_error).argsort()
+        print("top_k {}".format(top_k))
+        top = top_k[0]
+        top_label = labels[top]
+        print("label for good cluster is {}".format(top_label))
+
+        sorted_boxes = top_k
+        top_cluster_size = len(np.flatnonzero(labels == top_label))
+        print("top_cluster_size {}".format(top_cluster_size))
+        selected_boxes = sorted_boxes[:top_cluster_size]
+        print("selected_boxes {}".format(selected_boxes))
+        return selected_boxes
 
     def _ground_load(self, image):
         '''
@@ -144,7 +213,7 @@ class Ingress():
 
         return [sem_captions, sem_probs, rel_captions, rel_probs]
 
-    def _ground_query(self, expr, boxes):
+    def _ground_query(self, expr, boxes, is_rel_query):
         '''
         query a specific expression with the grounding model
         input: expr
@@ -198,6 +267,8 @@ class Ingress():
         if FILTER_METEOR_SCORE_THRESHOLD:
             pruned_selection_orig_idx = [idx for i, idx in enumerate(selection_orig_idx)
                                         if meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)]
+            pruned_meteor_scores = [meteor_scores[i] for i, idx in enumerate(selection_orig_idx)
+                                        if meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)]
             selection_orig_idx = pruned_selection_orig_idx
             rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
@@ -226,8 +297,45 @@ class Ingress():
         rospy.loginfo("after relation query: top idx {}".format(top_idx))
 
         # preprocess captions
-        captions = self._process_captions(
-            self._relevancy_result, query_result, context_boxes_idxs, expr)
+        captions = self._process_captions(self._relevancy_result, query_result, context_boxes_idxs, expr)
+
+        sorted_meteor_scores = []
+        for (count, idx) in enumerate(context_boxes_idxs):
+            tmp = selection_orig_idx.index(idx)
+            sorted_meteor_scores.append(pruned_meteor_scores[tmp])
+        rospy.loginfo("after relation query: meteor scores {}".format(sorted_meteor_scores))
+
+        # Sort relational scores using K-means
+        if is_rel_query:
+            semantic_captions = np.array(captions[0])
+            semantic_softmax = np.array(captions[1])
+            relational_captions = np.array(captions[2])
+            relational_softmax = np.array(captions[3])
+            sorted_boxes_idxs = self._rel_cluster(relational_softmax)
+            semantic_captions = semantic_captions[sorted_boxes_idxs].tolist()
+            semantic_softmax = semantic_softmax[sorted_boxes_idxs].tolist()
+            relational_captions = relational_captions[sorted_boxes_idxs].tolist()
+            relational_softmax = relational_softmax[sorted_boxes_idxs].tolist()
+            captions = [semantic_captions, semantic_softmax, relational_captions, relational_softmax]
+            context_boxes_idxs = np.array(context_boxes_idxs)[sorted_boxes_idxs].tolist()
+            top_idx = context_boxes_idxs[0]
+            rospy.loginfo("after relation kmeans: bbox index {}".format(context_boxes_idxs))
+            rospy.loginfo("after relation kmeans: top idx {}".format(top_idx))
+        elif ENABLE_SEMANTIC_K_MEANS:
+            semantic_captions = np.array(captions[0])
+            semantic_softmax = np.array(captions[1])
+            relational_captions = np.array(captions[2])
+            relational_softmax = np.array(captions[3])
+            sorted_boxes_idxs = self._sem_cluster(semantic_softmax, sorted_meteor_scores)
+            semantic_captions = semantic_captions[sorted_boxes_idxs].tolist()
+            semantic_softmax = semantic_softmax[sorted_boxes_idxs].tolist()
+            relational_captions = relational_captions[sorted_boxes_idxs].tolist()
+            relational_softmax = relational_softmax[sorted_boxes_idxs].tolist()
+            captions = [semantic_captions, semantic_softmax, relational_captions, relational_softmax]
+            context_boxes_idxs = np.array(context_boxes_idxs)[sorted_boxes_idxs].tolist()
+            top_idx = context_boxes_idxs[0]
+            rospy.loginfo("after semantic kmeans: bbox index {}".format(context_boxes_idxs))
+            rospy.loginfo("after semantic kmeans: top idx {}".format(top_idx))
 
         return top_idx, context_boxes_idxs, captions
 
@@ -320,7 +428,7 @@ class Ingress():
         self._grounding_result_pub.publish(result_img)
         rospy.loginfo("grounding result published")
 
-    def ground(self, image, expr, img_type='cv2'):
+    def ground(self, image, expr, img_type='cv2', is_rel_query=True):
         '''
         run the full grounding pipeline
         @param image, cv2 img or ros img_msg, depending on img_type
@@ -358,7 +466,7 @@ class Ingress():
 
         # else if user expression is not empty, ground user query
         else:
-            top_idx, context_idxs, captions = self._ground_query(expr, bboxes)
+            top_idx, context_idxs, captions = self._ground_query(expr, bboxes, is_rel_query)
 
         self._publish_grounding_result(bboxes, context_idxs)  # visualization of RViz
         return bboxes, top_idx, context_idxs, captions
