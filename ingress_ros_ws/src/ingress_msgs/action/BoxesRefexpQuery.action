@@ -11,5 +11,6 @@ int32[] context_boxes_idxs # original indexes of context objects
 bool is_ambiguous
 string[] predicted_captions
 float32[] probs
+float32[] meteor_scores
 --- 
 #feedback
