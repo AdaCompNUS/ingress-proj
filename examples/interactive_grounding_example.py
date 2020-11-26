@@ -12,7 +12,7 @@ import copy
 import numpy as np
 
 
-OPENCV_IMSHOW = False  # set this to True, if you want a GUI display for results
+OPENCV_IMSHOW = True  # set this to True, if you want a GUI display for results
 
 
 def ground():

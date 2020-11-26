@@ -258,6 +258,52 @@ class MILContextComprehension(ComprehensionExperiment):
 
         return q_boxes, q_fc7_feats, q_captioning_losses, q_similarity_ranks, q_orig_idx, q_similarity_score, dense_softmax
 
+    def rel_k_means(self, caption_losses, meteor_scores):
+        if len(caption_losses) <= 1:
+            print("rel_k_means, size too small, no need")
+            return None
+
+        caption_losses = np.array(caption_losses)
+        print("caption_loss: {}".format(caption_losses))
+        caption_losses = caption_losses / caption_losses.sum()
+        print("normalzied caption_losses: {}".format(caption_losses))
+
+        meteor_scores = np.array(meteor_scores)
+        print("meteor_scores: {}".format(meteor_scores))
+        meteor_scores = meteor_scores / meteor_scores.sum()
+        print("normalzied meteor_scores: {}".format(meteor_scores))
+
+        combined_score = np.vstack((caption_losses, meteor_scores)).T
+        if len(combined_score) <= 1 or np.any(np.isnan(combined_score)) or np.any(np.isinf(combined_score)):
+            print "Sample size too small for clustering"
+            return None
+
+        combined_score = np.concatenate((combined_score, np.array([[0.01, 0.01]])), axis=0)
+        print("combined_score {}".format(combined_score))
+        kmeans = KMeans(n_clusters=2)
+        kmeans.fit(combined_score)
+
+        centroids = kmeans.cluster_centers_
+        labels = kmeans.labels_
+        print("labels : {}".format(labels))
+
+        # the cluster closer to point [1.1](the maximum score) is the cluster to be selected.
+        cluster_euclidean_error = [np.linalg.norm(np.array([1., 1.])-i) for i in combined_score]
+        print("cluster_euclidean_error {}".format(cluster_euclidean_error))
+        top_k = np.array(cluster_euclidean_error).argsort()
+        print("top_k {}".format(top_k))
+        top = top_k[0]
+        top_label = labels[top]
+        print("label for good cluster is {}".format(top_label))
+
+        sorted_boxes = top_k
+        top_cluster_size = len(np.flatnonzero(labels == top_label))
+        print("top_cluster_size {}".format(top_cluster_size))
+        selected_boxes = sorted_boxes[:top_cluster_size]
+        print("selected_boxes {}".format(selected_boxes))
+
+        return selected_boxes
+
     def k_means(self, q_captioning_losses, q_similarity_score, q_orig_idx, captions, query, slice_point=10, max_cluster_size=5, norm_meteor=True, rev_loss=True, visualize=False, save_path='./clustering.png'):
         print("q_captioning_losses: {}".format(q_captioning_losses))
         # clustering
@@ -939,24 +985,31 @@ class MILContextComprehension(ComprehensionExperiment):
                 # ref_probs = np.array(ref_probs_list)
                 ref_similarity_score = [self._meteor.score(goal.query, cap) for cap in sorted_predictive_captions]
                 ref_orig_idx = range(len(ref_similarity_score))
-                # selection_idxs = self.k_means(ref_probs, ref_similarity_score, ref_orig_idx, sorted_predictive_captions, goal.query,
-                #                               slice_point=6, max_cluster_size=6,
-                #                               rev_loss=False, norm_meteor=False, visualize=VISUALIZE, save_path='/home/mohit/Programs/referring-expressions/lib/tests/clustering/clustering_spat.png')
+                selection_idxs = self.rel_k_means(ref_probs, ref_similarity_score)
 
+                print("before k-means, selection_idxs: {}".format(list(range(len(ref_similarity_score)))))
                 for t in range(len(ref_similarity_score)):
-                    print sorted_predictive_captions[t], ref_similarity_score[t], ref_orig_idx[t]
+                    print(sorted_predictive_captions[t], ref_probs[t], ref_similarity_score[t], ref_orig_idx[t])
+
+                print("after k-means, selection_idxs: {}".format(selection_idxs))
+                for t in selection_idxs:
+                    print(sorted_predictive_captions[t], ref_probs[t], ref_similarity_score[t], ref_orig_idx[t])
+
+                sorted_predictive_captions = np.take(sorted_predictive_captions, selection_idxs)
+                sorted_ref_probs = np.take(ref_probs, selection_idxs)
+                sorted_ref_meteor_scores = np.take(ref_similarity_score, selection_idxs)
 
                 is_ambiguous = True
-                pred_caps = sorted_predictive_captions
+                # pred_caps = sorted_predictive_captions
 
                 if method == 'noisy_or':
                     noisy_or_top_box = top_bboxes[0]
                 elif method == "image_context_only":
                     image_top_bbox = top_bboxes[0]
 
-            print "AMBIGUOUS EXPRESSION -----------------"
-            print (sorted_predictive_captions)
-            print (ref_probs)
+            print("AMBIGUOUS EXPRESSION -----------------")
+            print(sorted_predictive_captions)
+            print(sorted_ref_probs)
 
         # -----------------------------------------------------------------
 
@@ -969,8 +1022,9 @@ class MILContextComprehension(ComprehensionExperiment):
         result.top_box_idx = top_orig_idxs[0]
         result.context_boxes_idxs = top_orig_idxs[1:]
         result.is_ambiguous = is_ambiguous
-        result.predicted_captions = pred_caps
-        result.probs = ref_probs  # orig_probs
+        result.predicted_captions = sorted_predictive_captions
+        result.probs = sorted_ref_probs
+        result.meteor_scores = sorted_ref_meteor_scores
         if not self._combined_semaphore:
             self._boxes_refexp_query_service.set_succeeded(result)
 
