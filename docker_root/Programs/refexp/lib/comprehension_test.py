@@ -998,6 +998,7 @@ class MILContextComprehension(ComprehensionExperiment):
                 sorted_predictive_captions = np.take(sorted_predictive_captions, selection_idxs)
                 sorted_ref_probs = np.take(ref_probs, selection_idxs)
                 sorted_ref_meteor_scores = np.take(ref_similarity_score, selection_idxs)
+                top_bboxes = np.take(top_bboxes, selection_idxs)
 
                 is_ambiguous = True
                 # pred_caps = sorted_predictive_captions
