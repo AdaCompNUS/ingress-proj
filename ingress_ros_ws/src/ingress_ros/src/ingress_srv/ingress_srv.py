@@ -295,33 +295,13 @@ class Ingress():
 
         rospy.loginfo("after relation query: bbox index {}".format(self._context_boxes_idxs))
         rospy.loginfo("after relation query: top idx {}".format(top_idx))
-
+        rospy.loginfo("after relation query: ref prob {}".format(query_result.probs))
+        rospy.loginfo("after relation query: meteor scores {}".format(query_result.meteor_scores))
         # preprocess captions
         captions = self._process_captions(self._relevancy_result, query_result, context_boxes_idxs, expr)
 
-        sorted_meteor_scores = []
-        for (count, idx) in enumerate(context_boxes_idxs):
-            tmp = selection_orig_idx.index(idx)
-            sorted_meteor_scores.append(pruned_meteor_scores[tmp])
-        rospy.loginfo("after relation query: meteor scores {}".format(sorted_meteor_scores))
-
         # Sort relational scores using K-means
-        if is_rel_query:
-            semantic_captions = np.array(captions[0])
-            semantic_softmax = np.array(captions[1])
-            relational_captions = np.array(captions[2])
-            relational_softmax = np.array(captions[3])
-            sorted_boxes_idxs = self._rel_cluster(relational_softmax)
-            semantic_captions = semantic_captions[sorted_boxes_idxs].tolist()
-            semantic_softmax = semantic_softmax[sorted_boxes_idxs].tolist()
-            relational_captions = relational_captions[sorted_boxes_idxs].tolist()
-            relational_softmax = relational_softmax[sorted_boxes_idxs].tolist()
-            captions = [semantic_captions, semantic_softmax, relational_captions, relational_softmax]
-            context_boxes_idxs = np.array(context_boxes_idxs)[sorted_boxes_idxs].tolist()
-            top_idx = context_boxes_idxs[0]
-            rospy.loginfo("after relation kmeans: bbox index {}".format(context_boxes_idxs))
-            rospy.loginfo("after relation kmeans: top idx {}".format(top_idx))
-        elif ENABLE_SEMANTIC_K_MEANS:
+        if ENABLE_SEMANTIC_K_MEANS:
             semantic_captions = np.array(captions[0])
             semantic_softmax = np.array(captions[1])
             relational_captions = np.array(captions[2])
