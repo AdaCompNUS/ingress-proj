@@ -25,14 +25,14 @@ import ingress_msgs.srv
 DEBUG = False
 PUBLISH_DEBUG_RESULT = False
 FILTER_METEOR_SCORE_THRESHOLD = True
-ENABLE_SEMANTIC_K_MEANS = False
+ENABLE_SEMANTIC_K_MEANS = True
 
 # Constants
 VALID_MIN_CLUSTER_SIZE = 500  # points
 VALID_MIN_RELEVANCY_SCORE = 0.05
 VALID_MIN_METEOR_SCORE = 0.08
 NAME_REPLACEMENT_METEOR_SCORE_THRESHOLD = 0.1
-
+METEOR_SCORE_SCALER = 2 # empirically this is good
 
 def dbg_print(text):
     if DEBUG:
@@ -85,49 +85,19 @@ class Ingress():
         # demo ready!
         rospy.loginfo("Ingress ready!")
 
-    def _rel_cluster(self, relational_softmax):
-        relational_softmax = np.array(relational_softmax)
-        combined_score = relational_softmax.reshape(-1, 1)
-        if len(combined_score) <= 1 or np.any(np.isnan(combined_score)) or np.any(np.isinf(combined_score)):
-            print "Sample size too small for clustering"
-            return np.array([0])
-
-        # add a manual low probability score
-        combined_score = np.concatenate((combined_score, np.array([[0.01]])), axis=0)
-        print("combined_score {}".format(combined_score))
-        kmeans = KMeans(n_clusters=2)
-        kmeans.fit(combined_score)
-
-        centroids = kmeans.cluster_centers_
-        labels = kmeans.labels_
-        print("labels : {}".format(labels))
-
-        # the cluster closer to point [1.1](the maximum score) is the cluster to be selected.
-        cluster_euclidean_error = [np.linalg.norm(np.array([1., 1.])-i) for i in combined_score]
-        print("cluster_euclidean_error {}".format(cluster_euclidean_error))
-        top_k = np.array(cluster_euclidean_error).argsort()
-        print("top_k {}".format(top_k))
-        top = top_k[0]
-        top_label = labels[top]
-        print("label for good cluster is {}".format(top_label))
-
-        sorted_boxes = top_k
-        top_cluster_size = len(np.flatnonzero(labels == top_label))
-        print("top_cluster_size {}".format(top_cluster_size))
-        selected_boxes = sorted_boxes[:top_cluster_size]
-        print("selected_boxes {}".format(selected_boxes))
-        return selected_boxes
-
     def _sem_cluster(self, semantic_softmax, meteor_scores):
         semantic_softmax = np.array(semantic_softmax)
         meteor_scores = np.array(meteor_scores)
+        # normalized_meteor_scores = meteor_scores / meteor_scores.sum()
+        meteor_scores *= METEOR_SCORE_SCALER ## HACK
+        print("_sem_cluster, meteor_scores {}".format(meteor_scores))
         combined_score = np.vstack((semantic_softmax, meteor_scores)).T
         if len(combined_score) <= 1 or np.any(np.isnan(combined_score)) or np.any(np.isinf(combined_score)):
-            print "Sample size too small for clustering"
+            print("Sample size too small for clustering")
             return np.array([0])
 
         # add a manual low probability score
-        combined_score = np.concatenate((combined_score, np.array([[0.01, 0.00]])), axis=0)
+        combined_score = np.concatenate((combined_score, np.array([[0.01, 0.0]])), axis=0)
         print("combined_score {}".format(combined_score))
         kmeans = KMeans(n_clusters=2)
         kmeans.fit(combined_score)
@@ -173,7 +143,7 @@ class Ingress():
 
         return boxes, losses
 
-    def _process_captions(self, relevancy_result, query_result, context_boxes_idxs, query):
+    def _process_captions(self, relevancy_result, query_result, sorted_bbox_idxs, query):
         '''
         helper function to organize captions
         '''
@@ -186,30 +156,31 @@ class Ingress():
         for count, idx in enumerate(all_orig_idx):
             semantic_softmax_orig_idxs[idx] = semantic_softmax[count]
 
-        top_idxs = context_boxes_idxs
-        spatial_captions = query_result.predicted_captions
-        spatial_softmax = np.array(query_result.probs) / np.sum(np.array(query_result.probs))
+        if query_result is not None:
+            spatial_captions = query_result.predicted_captions
+            spatial_softmax = np.array(query_result.probs)
+        else:
+            spatial_captions = [''] * len(sorted_bbox_idxs)
+            spatial_softmax = [0] * len(sorted_bbox_idxs)
 
         dbg_print(all_orig_idx)
         dbg_print(semantic_softmax_orig_idxs)
         dbg_print(semantic_softmax)
         dbg_print(spatial_softmax)
-        dbg_print(top_idxs)
+        dbg_print(sorted_bbox_idxs)
 
         sem_captions = []
         sem_probs = []
         rel_captions = []
         rel_probs = []
-        for (count, idx) in enumerate(top_idxs):
-            if idx in context_boxes_idxs:
-                sem_captions.append(self._ungrounded_captions[idx])
-                sem_probs.append(semantic_softmax_orig_idxs[idx])
-                if count < len(spatial_softmax) and count < len(spatial_captions):
-                    rel_captions.append(spatial_captions[count].replace(
-                        query, '').replace('.', '').strip())
-                    rel_probs.append(spatial_softmax[count])
-                else:
-                    rospy.logwarn("Semantic and Spatial captions+prob lengths dont match!")
+        for (count, idx) in enumerate(sorted_bbox_idxs):
+            sem_captions.append(self._ungrounded_captions[idx])
+            sem_probs.append(semantic_softmax_orig_idxs[idx])
+            if count < len(spatial_softmax) and count < len(spatial_captions):
+                rel_captions.append(spatial_captions[count].replace(query, '').replace('.', '').strip())
+                rel_probs.append(spatial_softmax[count])
+            else:
+                rospy.logwarn("Semantic and Spatial captions+prob lengths dont match!")
 
         return [sem_captions, sem_probs, rel_captions, rel_probs]
 
@@ -228,7 +199,7 @@ class Ingress():
 
         # dialog storage
         self._relevancy_result = None
-        self._context_boxes_idxs = None
+        self._sorted_bbox_idxs = None
 
         # relevancy
         relevancy_goal = ingress_msgs.msg.RelevancyClusteringGoal(query, incorrect_idxs)
@@ -237,9 +208,9 @@ class Ingress():
         self._relevancy_result = self._relevancy_client.get_result()
         # selection_orig_idx = self._relevancy_client.get_result().selection_orig_idx
         selection_orig_idx = list(self._relevancy_result.selection_orig_idx)
-        meteor_scores = list(self._relevancy_result.meteor_scores)
+        semantic_meteor_scores = list(self._relevancy_result.meteor_scores)
         rospy.loginfo("after relevancy clustering: bbox index {}".format(selection_orig_idx))
-        rospy.loginfo("after relevancy clustering: meteor scores {}".format(meteor_scores))
+        rospy.loginfo("after relevancy clustering: meteor scores {}".format(semantic_meteor_scores))
 
         # clean
         # num_points_arr = [list(self._segment_pc(boxes[idx]))[1] for idx in selection_orig_idx]
@@ -266,10 +237,11 @@ class Ingress():
         # clean by threshold on meteor score,
         if FILTER_METEOR_SCORE_THRESHOLD:
             pruned_selection_orig_idx = [idx for i, idx in enumerate(selection_orig_idx)
-                                        if meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)]
-            pruned_meteor_scores = [meteor_scores[i] for i, idx in enumerate(selection_orig_idx)
-                                        if meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)]
+                                        if semantic_meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)]
+            pruned_semantic_meteor_scores = [semantic_meteor_scores[i] for i, idx in enumerate(selection_orig_idx)
+                                            if semantic_meteor_scores[i] > VALID_MIN_METEOR_SCORE and idx < len(boxes)]
             selection_orig_idx = pruned_selection_orig_idx
+            semantic_meteor_scores = pruned_semantic_meteor_scores
             rospy.loginfo("pruned index {}".format(selection_orig_idx))
 
         # Also the idx must be < len(boxes). This check is necessary because one additional caption is generated for the whole image.
@@ -280,64 +252,53 @@ class Ingress():
             rospy.logwarn("Ingress_srv: no object detected")
             return 0, [], None
 
-        # ground the query
-        selected_boxes = np.take(boxes, selection_orig_idx, axis=0)
-        query_goal = ingress_msgs.msg.BoxesRefexpQueryGoal(
-            query, np.array(selected_boxes).ravel(), selection_orig_idx, incorrect_idxs)
-        self._query_client.send_goal(query_goal)
-        self._query_client.wait_for_result()
-        query_result = self._query_client.get_result()
+        # skip relational query if it is not relational caption
+        if not is_rel_query:
+            rospy.logwarn("Ingress_srv: not rel_query, skipping relational query!")
+            sorted_bbox_idxs = selection_orig_idx
+            query_result = None
+            top_idx = sorted_bbox_idxs[0]
+        else:
+            # ground the query
+            selected_boxes = np.take(boxes, selection_orig_idx, axis=0)
+            query_goal = ingress_msgs.msg.BoxesRefexpQueryGoal(
+                query, np.array(selected_boxes).ravel(), selection_orig_idx, incorrect_idxs)
+            self._query_client.send_goal(query_goal)
+            self._query_client.wait_for_result()
+            query_result = self._query_client.get_result()
 
-        # grounding results: indexes of most likely bounding boxes
-        top_idx = query_result.top_box_idx
-        context_boxes_idxs = [top_idx] + list(query_result.context_boxes_idxs)
-        self._context_boxes_idxs = list(context_boxes_idxs)
+            # grounding results: indexes of most likely bounding boxes
+            top_idx = query_result.top_box_idx
+            sorted_bbox_idxs = [top_idx] + list(query_result.context_boxes_idxs)
 
-        rospy.loginfo("after relation query: bbox index {}".format(self._context_boxes_idxs))
-        rospy.loginfo("after relation query: top idx {}".format(top_idx))
+            rospy.loginfo("after relation query: bbox index {}".format(sorted_bbox_idxs))
+            rospy.loginfo("after relation query: top idx {}".format(top_idx))
+            rospy.loginfo("after relation query: ref prob {}".format(query_result.probs))
+            rospy.loginfo("after relation query: meteor scores {}".format(query_result.meteor_scores))
 
         # preprocess captions
-        captions = self._process_captions(self._relevancy_result, query_result, context_boxes_idxs, expr)
+        self._sorted_bbox_idxs = list(sorted_bbox_idxs)
+        captions = self._process_captions(self._relevancy_result, query_result, sorted_bbox_idxs, expr)
 
-        sorted_meteor_scores = []
-        for (count, idx) in enumerate(context_boxes_idxs):
-            tmp = selection_orig_idx.index(idx)
-            sorted_meteor_scores.append(pruned_meteor_scores[tmp])
-        rospy.loginfo("after relation query: meteor scores {}".format(sorted_meteor_scores))
-
-        # Sort relational scores using K-means
-        if is_rel_query:
+        # optionally, sort semantic scores using K-means again
+        if not is_rel_query and ENABLE_SEMANTIC_K_MEANS:
             semantic_captions = np.array(captions[0])
             semantic_softmax = np.array(captions[1])
             relational_captions = np.array(captions[2])
             relational_softmax = np.array(captions[3])
-            sorted_boxes_idxs = self._rel_cluster(relational_softmax)
+            sorted_boxes_idxs = self._sem_cluster(semantic_softmax, semantic_meteor_scores)
             semantic_captions = semantic_captions[sorted_boxes_idxs].tolist()
             semantic_softmax = semantic_softmax[sorted_boxes_idxs].tolist()
             relational_captions = relational_captions[sorted_boxes_idxs].tolist()
             relational_softmax = relational_softmax[sorted_boxes_idxs].tolist()
             captions = [semantic_captions, semantic_softmax, relational_captions, relational_softmax]
-            context_boxes_idxs = np.array(context_boxes_idxs)[sorted_boxes_idxs].tolist()
-            top_idx = context_boxes_idxs[0]
-            rospy.loginfo("after relation kmeans: bbox index {}".format(context_boxes_idxs))
-            rospy.loginfo("after relation kmeans: top idx {}".format(top_idx))
-        elif ENABLE_SEMANTIC_K_MEANS:
-            semantic_captions = np.array(captions[0])
-            semantic_softmax = np.array(captions[1])
-            relational_captions = np.array(captions[2])
-            relational_softmax = np.array(captions[3])
-            sorted_boxes_idxs = self._sem_cluster(semantic_softmax, sorted_meteor_scores)
-            semantic_captions = semantic_captions[sorted_boxes_idxs].tolist()
-            semantic_softmax = semantic_softmax[sorted_boxes_idxs].tolist()
-            relational_captions = relational_captions[sorted_boxes_idxs].tolist()
-            relational_softmax = relational_softmax[sorted_boxes_idxs].tolist()
-            captions = [semantic_captions, semantic_softmax, relational_captions, relational_softmax]
-            context_boxes_idxs = np.array(context_boxes_idxs)[sorted_boxes_idxs].tolist()
-            top_idx = context_boxes_idxs[0]
-            rospy.loginfo("after semantic kmeans: bbox index {}".format(context_boxes_idxs))
+            sorted_bbox_idxs = np.array(sorted_bbox_idxs)[sorted_boxes_idxs].tolist()
+            top_idx = sorted_bbox_idxs[0]
+            rospy.loginfo("after semantic kmeans: bbox index {}".format(sorted_bbox_idxs))
             rospy.loginfo("after semantic kmeans: top idx {}".format(top_idx))
+            self._sorted_bbox_idxs = list(sorted_bbox_idxs)
 
-        return top_idx, context_boxes_idxs, captions
+        return top_idx, sorted_bbox_idxs, captions
 
     def _reground_query(self, expr, boxes):
         '''
@@ -375,15 +336,15 @@ class Ingress():
 
         # grounding results: indexes of mostly bounding boxes
         top_idx = query_result.top_box_idx
-        context_boxes_idxs = [top_idx] + list(query_result.context_boxes_idxs)
+        sorted_bbox_idxs = [top_idx] + list(query_result.context_boxes_idxs)
+        self._sorted_bbox_idxs = sorted_bbox_idxs
 
         # preprocess captions
-        captions = self._process_captions(
-            new_relevancy_result, query_result, self._context_boxes_idxs, query)
+        captions = self._process_captions(new_relevancy_result, query_result, self._sorted_bbox_idxs, query)
 
-        return top_idx, context_boxes_idxs, captions
+        return top_idx, sorted_bbox_idxs, captions
 
-    def _publish_grounding_result(self, boxes, context_boxes_idxs, captions=None):
+    def _publish_grounding_result(self, boxes, sorted_bbox_idxs, captions=None):
         '''
         debugging visualization of the bounding box outputs from the grounding model
         '''
@@ -392,12 +353,12 @@ class Ingress():
             return
 
         # Input validity check
-        if len(boxes) == 0 or len(context_boxes_idxs) == 0:
+        if len(boxes) == 0 or len(sorted_bbox_idxs) == 0:
             return
 
         # Deepcopy is important here, otherwise self._img_msg will be contaminated.
         draw_img = copy.deepcopy(CvBridge().imgmsg_to_cv2(self._img_msg))
-        for (count, idx) in enumerate(context_boxes_idxs):
+        for (count, idx) in enumerate(sorted_bbox_idxs):
 
             x1 = int(boxes[idx][0])
             y1 = int(boxes[idx][1])
@@ -406,7 +367,7 @@ class Ingress():
 
             if count == 0:  # top idx
                 cv2.rectangle(draw_img, (x1, y1), (x2, y2), (0, 255, 0), 5)
-            elif count < len(context_boxes_idxs):
+            elif count < len(sorted_bbox_idxs):
                 cv2.rectangle(draw_img, (x1, y1), (x2, y2), (0, 0, 255), 2)
 
             # add captions
@@ -576,7 +537,7 @@ class Ingress():
         self._box_refexp_query_client.wait_for_result()
         query_result = self._box_refexp_query_client.get_result()
         predicted_captions = query_result.predicted_captions
-        context_boxes_idxs = query_result.context_boxes_idxs
+        sorted_bbox_idxs = query_result.context_boxes_idxs
         pred_caption_probs = query_result.probs
 
         if len(pred_caption_probs) == 0:
@@ -585,9 +546,9 @@ class Ingress():
 
         top_idx = np.argmax(pred_caption_probs)
         top_caption = predicted_captions[top_idx].lstrip(' ')
-        top_context_box_idx = context_boxes_idxs[top_idx]
+        top_box_idx = sorted_bbox_idxs[top_idx]
 
-        return top_caption, top_context_box_idx
+        return top_caption, top_box_idx
 
 if __name__ == '__main__':
     rospy.init_node('ingress_ros')

@@ -265,8 +265,6 @@ class MILContextComprehension(ComprehensionExperiment):
 
         caption_losses = np.array(caption_losses)
         print("caption_loss: {}".format(caption_losses))
-        caption_losses = caption_losses / caption_losses.sum()
-        print("normalzied caption_losses: {}".format(caption_losses))
 
         meteor_scores = np.array(meteor_scores)
         print("meteor_scores: {}".format(meteor_scores))
@@ -592,10 +590,8 @@ class MILContextComprehension(ComprehensionExperiment):
                 continue
 
             print("selection_idxs: {}".format(selection_idxs))
-            is_visually_confident = True if (
-                best_meteor_sim < 0.5 and dense_softmax[0] > 0.8) else False
-            print("relevancy_clustering 2", is_visually_confident,
-                  best_meteor_sim, dense_softmax[0])
+            is_visually_confident = True if (best_meteor_sim < 0.5 and dense_softmax[0] > 0.8) else False
+            print("relevancy_clustering 2", is_visually_confident, best_meteor_sim, dense_softmax[0])
 
             # print("relevancy_clustering: q_orig_idx: {}".format(q_orig_idx))
 
@@ -980,7 +976,11 @@ class MILContextComprehension(ComprehensionExperiment):
                 print(output_probs)
                 sorted_predictive_captions = [predictive_captions[k] for k in sort_keys[:top_k]]
 
+                ## perform relational + CEL k-means cluster
                 ref_probs = np.array(sorted_stats)
+                print("raw ref_probs: {}".format(ref_probs))
+                exp_ref_probs = np.exp(ref_probs)
+                ref_probs = exp_ref_probs / exp_ref_probs.sum()
                 # ref_probs_list = [orig_probs[k] for k in sort_keys[:top_k]]
                 # ref_probs = np.array(ref_probs_list)
                 ref_similarity_score = [self._meteor.score(goal.query, cap) for cap in sorted_predictive_captions]
@@ -995,12 +995,12 @@ class MILContextComprehension(ComprehensionExperiment):
                 for t in selection_idxs:
                     print(sorted_predictive_captions[t], ref_probs[t], ref_similarity_score[t], ref_orig_idx[t])
 
+                ## sort everything based on k-means cluster result.
                 sorted_predictive_captions = np.take(sorted_predictive_captions, selection_idxs)
                 sorted_ref_probs = np.take(ref_probs, selection_idxs)
                 sorted_ref_meteor_scores = np.take(ref_similarity_score, selection_idxs)
-
+                top_bboxes = [top_bboxes[i] for i in selection_idxs]
                 is_ambiguous = True
-                # pred_caps = sorted_predictive_captions
 
                 if method == 'noisy_or':
                     noisy_or_top_box = top_bboxes[0]
