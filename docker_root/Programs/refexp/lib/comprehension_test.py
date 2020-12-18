@@ -976,6 +976,12 @@ class MILContextComprehension(ComprehensionExperiment):
                 print(output_probs)
                 sorted_predictive_captions = [predictive_captions[k] for k in sort_keys[:top_k]]
 
+                # prune wrong phrases, HACK!!!
+                for i in range(len(sorted_predictive_captions)):
+                    sorted_predictive_captions[i] = sorted_predictive_captions[i].replace('cut off', '')
+                    sorted_predictive_captions[i] = sorted_predictive_captions[i].replace('holding the', '')
+                print("after pruning: {}".format(sorted_predictive_captions))
+
                 ## perform relational + CEL k-means cluster
                 ref_probs = np.array(sorted_stats)
                 print("raw ref_probs: {}".format(ref_probs))
