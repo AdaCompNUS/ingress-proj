@@ -412,7 +412,7 @@ class Ingress():
         else:
             self._img_msg = CvBridge().cv2_to_imgmsg(image, "rgb8")
 
-        bboxes, losses = self._ground_load(image)
+        bboxes, losses = self._ground_load(self._img_msg)
 
         # if user exprssion is empty, just generate captions for image
         if expr == '':
