@@ -286,6 +286,8 @@ class Ingress():
             semantic_softmax = np.array(captions[1])
             relational_captions = np.array(captions[2])
             relational_softmax = np.array(captions[3])
+            rospy.loginfo("bbox sementic captions: {}".format(semantic_captions))
+            rospy.loginfo("bbox semantic_softmax: {}".format(semantic_softmax))
             sorted_boxes_idxs = self._sem_cluster(semantic_softmax, semantic_meteor_scores)
             semantic_captions = semantic_captions[sorted_boxes_idxs].tolist()
             semantic_softmax = semantic_softmax[sorted_boxes_idxs].tolist()
