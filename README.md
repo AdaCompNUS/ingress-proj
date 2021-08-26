@@ -47,7 +47,7 @@ $ nvidia-smi
 ### Download Docker Image
 Clone the repo and build ROS workspace:
 ```bash
-$ git clone https://github.com/AdaCompNUS/ingress.git
+$ git clone https://github.com/AdaCompNUS/ingress-proj.git
 $ cd ingress/ingress_ros_ws
 $ catkin_make
 $ source devel/setup.bash
