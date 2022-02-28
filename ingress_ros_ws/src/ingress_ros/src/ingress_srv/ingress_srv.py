@@ -74,6 +74,12 @@ class Ingress():
         rospy.loginfo("Ingress: 5. Waiting for box_refexp_query action server ...")
         self._box_refexp_query_client.wait_for_server()
 
+        # wait for box refexp batch query
+        self._box_refexp_query_batch_client = actionlib.SimpleActionClient(
+            'box_refexp_query_batch', ingress_msgs.msg.BoxRefexpQueryBatchAction)
+        rospy.loginfo("Ingress: 6. Waiting for box_refexp_query_batch action server ...")
+        self._box_refexp_query_batch_client.wait_for_server()
+
         # meteor score client:
         self._meteor_score_client = rospy.ServiceProxy(
             'meteor_score', ingress_msgs.srv.MeteorScore)
@@ -455,6 +461,7 @@ class Ingress():
         img_msg = CvBridge().cv2_to_imgmsg(image, "rgb8")
         self._img_msg = img_msg
         # convert 2d bbox list to 1d
+        bboxes = self._xyxy_to_xywh(bboxes)
         bboxes_1d = [i for bbox in bboxes for i in bbox]
         print(bboxes_1d)
 
@@ -494,7 +501,14 @@ class Ingress():
         self._publish_grounding_result(bboxes, context_idxs)  # visualization of RViz
         return bboxes, top_idx, context_idxs, captions
 
+    def _xyxy_to_xywh(self, bboxes):
+        bboxes = np.array(bboxes)
+        bboxes[:, 2:] -= bboxes[:, :2]
+        return bboxes.tolist()
+
     def generate_rel_captions_for_box(self, img_cv, bboxes, target_idx):
+        bboxes = self._xyxy_to_xywh(bboxes)
+        print('Image Shape for Captioning:')
         print(img_cv.shape)
         # preprocess data
         # convert image to ros image
@@ -502,9 +516,6 @@ class Ingress():
         self._img_msg = img_msg
 
         if len(bboxes) > 0:
-            # add background to bbox
-            bboxes.append([0, 0, img_cv.shape[1], img_cv.shape[0]])
-
             # convert 2d bbox list to 1d
             bboxes_1d = [i for bbox in bboxes for i in bbox]
             print(bboxes_1d)
@@ -519,15 +530,6 @@ class Ingress():
         rospy.loginfo("ground_img_with_bbox, result received")
         rospy.loginfo("bbox captions: {}".format(load_result.captions))
         rospy.loginfo("bbox caption scores: {}".format(load_result.scores))
-        # boxes, losses = self._ground_load(img_msg)
-        # if len(bboxes) == 0:
-        #     # add background to bbox
-        #     boxes = boxes.tolist()
-        #     boxes.append([0, 0, img_cv.shape[1], img_cv.shape[0]])
-
-        #     # convert 2d bbox list to 1d
-        #     bboxes_1d = [i for bbox in boxes for i in bbox]
-        #     print(bboxes_1d)
 
         # now ask ingress to generate rel captions
         query_goal = ingress_msgs.msg.BoxRefexpQueryGoal()
@@ -551,6 +553,53 @@ class Ingress():
         top_box_idx = sorted_bbox_idxs[top_idx]
 
         return top_caption, top_box_idx
+
+    def generate_all_captions_for_boxes(self, img_cv, bboxes):
+        bboxes = self._xyxy_to_xywh(bboxes)
+        print('Image Shape for Captioning:')
+        print(img_cv.shape)
+        # preprocess data
+        # convert image to ros image
+        img_msg = CvBridge().cv2_to_imgmsg(img_cv, "rgb8")
+        self._img_msg = img_msg
+
+        if len(bboxes) > 0:
+            # convert 2d bbox list to 1d
+            bboxes_1d = [i for bbox in bboxes for i in bbox]
+            print(bboxes_1d)
+
+        # load image, extract and store feature vectors for each bounding box
+        goal = ingress_msgs.msg.DenseRefexpLoadBBoxesGoal()
+        goal.input = img_msg
+        goal.boxes = bboxes_1d
+        self._load_bbox_client.send_goal(goal)
+        self._load_bbox_client.wait_for_result()
+        load_result = self._load_bbox_client.get_result()
+        rospy.loginfo("ground_img_with_bbox, result received")
+        rospy.loginfo("bbox captions: {}".format(load_result.captions))
+        rospy.loginfo("bbox caption scores: {}".format(load_result.scores))
+        selfref_captions = load_result.captions[:-1]
+
+        # now ask ingress to generate rel captions
+        query_goal = ingress_msgs.msg.BoxRefexpQueryBatchGoal()
+        query_goal.query = ''
+        query_goal.boxes = bboxes_1d
+        query_goal.selection_orig_idx = [i for i in range(len(bboxes))]
+        query_goal.target_box_idxs = np.arange(len(bboxes), dtype=np.int32).tolist()
+        self._box_refexp_query_batch_client.send_goal(query_goal)
+        self._box_refexp_query_batch_client.wait_for_result()
+        query_result = self._box_refexp_query_batch_client.get_result()
+        predicted_captions = query_result.predicted_captions
+        predicted_captions = np.array(predicted_captions).reshape(len(bboxes), -1).tolist()
+        context_boxes_idxs = np.array(query_result.context_boxes_idxs).reshape(len(bboxes), -1).tolist()
+        pred_caption_probs = np.array(query_result.probs).reshape(len(bboxes), -1).tolist()
+        rel_captions = predicted_captions
+
+        if len(pred_caption_probs) == 0:
+            print("ERROR: pred_caption is empty!!!")
+            return None, None
+
+        return selfref_captions, rel_captions, context_boxes_idxs, pred_caption_probs
 
 if __name__ == '__main__':
     rospy.init_node('ingress_ros')
